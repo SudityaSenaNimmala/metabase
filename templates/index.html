@@ -1,0 +1,1505 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard Auto-Clone Service</title>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-primary: #0a0a0f;
+            --bg-secondary: #12121a;
+            --bg-card: #1a1a24;
+            --bg-hover: #22222e;
+            --accent-blue: #3b82f6;
+            --accent-green: #10b981;
+            --accent-red: #ef4444;
+            --accent-yellow: #f59e0b;
+            --accent-purple: #8b5cf6;
+            --accent-cyan: #06b6d4;
+            --text-primary: #f1f5f9;
+            --text-secondary: #94a3b8;
+            --text-muted: #64748b;
+            --border-color: #2d2d3a;
+            --glow-blue: rgba(59, 130, 246, 0.3);
+            --glow-green: rgba(16, 185, 129, 0.3);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        /* Spin animation */
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+
+        .spin {
+            animation: spin 1s linear infinite;
+        }
+
+        /* Animated background */
+        .bg-pattern {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: 
+                radial-gradient(ellipse at 20% 20%, rgba(59, 130, 246, 0.08) 0%, transparent 50%),
+                radial-gradient(ellipse at 80% 80%, rgba(139, 92, 246, 0.08) 0%, transparent 50%),
+                radial-gradient(ellipse at 50% 50%, rgba(6, 182, 212, 0.05) 0%, transparent 70%);
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 2rem;
+            position: relative;
+            z-index: 1;
+        }
+
+        /* Header */
+        .header {
+            text-align: center;
+            margin-bottom: 3rem;
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, var(--accent-blue), var(--accent-cyan), var(--accent-purple));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 0.5rem;
+            letter-spacing: -0.02em;
+        }
+
+        .header p {
+            color: var(--text-secondary);
+            font-size: 1.1rem;
+        }
+
+        /* Timer Section */
+        .timer-section {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 24px;
+            padding: 3rem;
+            margin-bottom: 2rem;
+            text-align: center;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .timer-section::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: linear-gradient(90deg, var(--accent-blue), var(--accent-cyan), var(--accent-purple));
+        }
+
+        .timer-label {
+            font-size: 0.9rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.15em;
+            margin-bottom: 1rem;
+        }
+
+        .timer-display {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 5rem;
+            font-weight: 700;
+            color: var(--text-primary);
+            text-shadow: 0 0 60px var(--glow-blue);
+            margin-bottom: 1.5rem;
+            letter-spacing: 0.05em;
+        }
+
+        .timer-display.running {
+            color: var(--accent-green);
+            text-shadow: 0 0 60px var(--glow-green);
+            animation: pulse 2s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.75rem 1.5rem;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 100px;
+            font-size: 0.95rem;
+            color: var(--text-secondary);
+        }
+
+        .status-badge.running {
+            border-color: var(--accent-green);
+            color: var(--accent-green);
+        }
+
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: var(--text-muted);
+        }
+
+        .status-dot.active {
+            background: var(--accent-green);
+            animation: blink 1s ease-in-out infinite;
+        }
+
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+
+        /* Action Buttons */
+        .actions {
+            display: flex;
+            justify-content: center;
+            gap: 1rem;
+            margin-top: 2rem;
+        }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.875rem 1.75rem;
+            border: none;
+            border-radius: 12px;
+            font-family: 'Inter', sans-serif;
+            font-size: 0.95rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, var(--accent-blue), var(--accent-purple));
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 40px rgba(59, 130, 246, 0.3);
+        }
+
+        .btn-primary:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .btn-secondary {
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+            border: 1px solid var(--border-color);
+        }
+
+        .btn-secondary:hover {
+            background: var(--bg-hover);
+            border-color: var(--accent-blue);
+        }
+
+        /* Stats Grid */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .stat-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 1.5rem;
+            text-align: center;
+            transition: all 0.2s ease;
+        }
+
+        .stat-card:hover {
+            border-color: var(--accent-blue);
+            transform: translateY(-2px);
+        }
+
+        .stat-value {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 2.5rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+        }
+
+        .stat-value.content { color: var(--accent-blue); }
+        .stat-value.message { color: var(--accent-purple); }
+        .stat-value.email { color: var(--accent-cyan); }
+        .stat-value.total { color: var(--accent-green); }
+
+        .stat-label {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+        }
+
+        /* Activity Log */
+        .log-section {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 24px;
+            overflow: hidden;
+        }
+
+        .log-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1.5rem 2rem;
+            border-bottom: 1px solid var(--border-color);
+            background: var(--bg-secondary);
+        }
+
+        .log-header h2 {
+            font-size: 1.25rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .log-header h2::before {
+            content: '';
+            width: 4px;
+            height: 24px;
+            background: linear-gradient(180deg, var(--accent-blue), var(--accent-purple));
+            border-radius: 2px;
+        }
+
+        .log-count {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            background: var(--bg-primary);
+            padding: 0.5rem 1rem;
+            border-radius: 8px;
+        }
+
+        .log-list {
+            max-height: 600px;
+            overflow-y: auto;
+        }
+
+        .log-list::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        .log-list::-webkit-scrollbar-track {
+            background: var(--bg-secondary);
+        }
+
+        .log-list::-webkit-scrollbar-thumb {
+            background: var(--border-color);
+            border-radius: 4px;
+        }
+
+        .log-entry {
+            display: grid;
+            grid-template-columns: auto 1fr auto auto;
+            gap: 1.5rem;
+            align-items: center;
+            padding: 1.25rem 2rem;
+            border-bottom: 1px solid var(--border-color);
+            transition: background 0.2s ease;
+        }
+
+        .log-entry:hover {
+            background: var(--bg-hover);
+        }
+
+        .log-entry:last-child {
+            border-bottom: none;
+        }
+
+        .log-type {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            padding: 0.375rem 0.75rem;
+            border-radius: 6px;
+            letter-spacing: 0.05em;
+        }
+
+        .log-type.content {
+            background: rgba(59, 130, 246, 0.15);
+            color: var(--accent-blue);
+        }
+
+        .log-type.message {
+            background: rgba(139, 92, 246, 0.15);
+            color: var(--accent-purple);
+        }
+
+        .log-type.email {
+            background: rgba(6, 182, 212, 0.15);
+            color: var(--accent-cyan);
+        }
+
+        .log-info {
+            min-width: 0;
+        }
+
+        .log-dashboard {
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 0.25rem;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .log-database {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+        }
+
+        .log-time {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            white-space: nowrap;
+        }
+
+        .log-status {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .status-icon {
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.75rem;
+        }
+
+        .status-icon.success {
+            background: rgba(16, 185, 129, 0.15);
+            color: var(--accent-green);
+        }
+
+        .status-icon.failed {
+            background: rgba(239, 68, 68, 0.15);
+            color: var(--accent-red);
+        }
+
+        .status-icon.deleted {
+            background: rgba(251, 191, 36, 0.15);
+            color: #fbbf24;
+        }
+
+        .log-entry.deleted {
+            opacity: 0.7;
+            border-left: 3px solid #fbbf24;
+        }
+
+        .log-link {
+            color: var(--accent-blue);
+            text-decoration: none;
+            font-size: 0.85rem;
+            opacity: 0;
+            transition: opacity 0.2s ease;
+        }
+
+        .log-entry:hover .log-link {
+            opacity: 1;
+        }
+
+        .log-link:hover {
+            text-decoration: underline;
+        }
+
+        /* Empty State */
+        .empty-state {
+            text-align: center;
+            padding: 4rem 2rem;
+            color: var(--text-muted);
+        }
+
+        .empty-state svg {
+            width: 64px;
+            height: 64px;
+            margin-bottom: 1rem;
+            opacity: 0.5;
+        }
+
+        /* Log Filters */
+        .log-filters {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1rem 2rem;
+            border-bottom: 1px solid var(--border-color);
+            background: var(--bg-secondary);
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+
+        .filter-buttons {
+            display: flex;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+        }
+
+        .filter-btn {
+            padding: 0.5rem 1rem;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            background: var(--bg-primary);
+            color: var(--text-secondary);
+            font-family: 'Inter', sans-serif;
+            font-size: 0.85rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .filter-btn:hover {
+            border-color: var(--accent-blue);
+            color: var(--accent-blue);
+        }
+
+        .filter-btn.active {
+            background: var(--accent-blue);
+            border-color: var(--accent-blue);
+            color: white;
+        }
+
+        .date-picker-container {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .date-picker-container label {
+            color: var(--text-muted);
+            font-size: 0.85rem;
+        }
+
+        .date-picker-container input[type="date"] {
+            padding: 0.5rem 0.75rem;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.85rem;
+            cursor: pointer;
+        }
+
+        .date-picker-container input[type="date"]::-webkit-calendar-picker-indicator {
+            filter: invert(0.7);
+            cursor: pointer;
+        }
+
+        .date-picker-container input[type="date"]:focus {
+            outline: none;
+            border-color: var(--accent-blue);
+        }
+
+        .clear-btn {
+            padding: 0.5rem 0.75rem;
+            font-size: 0.8rem;
+        }
+
+        /* Config Section */
+        .config-section {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .config-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 1rem;
+        }
+
+        .config-item {
+            background: var(--bg-secondary);
+            border-radius: 12px;
+            padding: 1rem;
+        }
+
+        .config-label {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            margin-bottom: 0.5rem;
+        }
+
+        .config-value {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.9rem;
+            color: var(--text-primary);
+        }
+
+        .config-value.not-set {
+            color: var(--accent-red);
+        }
+
+        /* Settings Modal */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(4px);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            opacity: 0;
+            visibility: hidden;
+            transition: all 0.3s ease;
+        }
+
+        .modal-overlay.active {
+            opacity: 1;
+            visibility: visible;
+        }
+
+        .modal {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            width: 90%;
+            max-width: 700px;
+            max-height: 90vh;
+            overflow-y: auto;
+            transform: scale(0.9) translateY(20px);
+            transition: transform 0.3s ease;
+        }
+
+        .modal-overlay.active .modal {
+            transform: scale(1) translateY(0);
+        }
+
+        .modal-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 1.5rem;
+            border-bottom: 1px solid var(--border-color);
+            position: sticky;
+            top: 0;
+            background: var(--bg-card);
+            z-index: 10;
+        }
+
+        .modal-header h2 {
+            font-size: 1.25rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .modal-close {
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            cursor: pointer;
+            padding: 0.5rem;
+            border-radius: 8px;
+            transition: all 0.2s ease;
+        }
+
+        .modal-close:hover {
+            background: var(--bg-hover);
+            color: var(--text-primary);
+        }
+
+        .modal-body {
+            padding: 1.5rem;
+        }
+
+        .settings-section {
+            margin-bottom: 2rem;
+        }
+
+        .settings-section:last-child {
+            margin-bottom: 0;
+        }
+
+        .settings-section h3 {
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .settings-section h3 svg {
+            width: 16px;
+            height: 16px;
+        }
+
+        .form-group {
+            margin-bottom: 1rem;
+        }
+
+        .form-group label {
+            display: block;
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            margin-bottom: 0.5rem;
+        }
+
+        .form-input {
+            width: 100%;
+            padding: 0.75rem 1rem;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            color: var(--text-primary);
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.9rem;
+            transition: all 0.2s ease;
+        }
+
+        .form-input:focus {
+            outline: none;
+            border-color: var(--accent-blue);
+            box-shadow: 0 0 0 3px var(--glow-blue);
+        }
+
+        .form-input::placeholder {
+            color: var(--text-muted);
+        }
+
+        .form-row {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 1rem;
+        }
+
+        .form-row .form-group {
+            margin-bottom: 0;
+        }
+
+        .modal-footer {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 1.5rem;
+            border-top: 1px solid var(--border-color);
+            background: var(--bg-secondary);
+            border-radius: 0 0 16px 16px;
+        }
+
+        .test-btn {
+            background: var(--bg-hover);
+            border: 1px solid var(--border-color);
+            color: var(--text-secondary);
+            padding: 0.75rem 1.25rem;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            transition: all 0.2s ease;
+        }
+
+        .test-btn:hover {
+            background: var(--bg-card);
+            color: var(--text-primary);
+        }
+
+        .save-btn {
+            background: linear-gradient(135deg, var(--accent-blue), var(--accent-cyan));
+            border: none;
+            color: white;
+            padding: 0.75rem 2rem;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            transition: all 0.2s ease;
+        }
+
+        .save-btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 15px var(--glow-blue);
+        }
+
+        .save-btn:disabled, .test-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .toast {
+            position: fixed;
+            bottom: 2rem;
+            right: 2rem;
+            padding: 1rem 1.5rem;
+            border-radius: 8px;
+            color: white;
+            font-weight: 500;
+            z-index: 2000;
+            transform: translateY(100px);
+            opacity: 0;
+            transition: all 0.3s ease;
+        }
+
+        .toast.show {
+            transform: translateY(0);
+            opacity: 1;
+        }
+
+        .toast.success {
+            background: var(--accent-green);
+        }
+
+        .toast.error {
+            background: var(--accent-red);
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .container {
+                padding: 1rem;
+            }
+
+            .timer-display {
+                font-size: 3rem;
+            }
+
+            .log-entry {
+                grid-template-columns: 1fr;
+                gap: 0.75rem;
+            }
+
+            .config-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .form-row {
+                grid-template-columns: 1fr;
+            }
+
+            .modal-footer {
+                flex-direction: column;
+                gap: 1rem;
+            }
+
+            .modal-footer button {
+                width: 100%;
+                justify-content: center;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="bg-pattern"></div>
+    
+    <div class="container">
+        <header class="header">
+            <h1>Dashboard Auto-Clone Service</h1>
+            <p>Automatically creates dashboards for new databases every hour</p>
+        </header>
+
+        <!-- Timer Section -->
+        <section class="timer-section">
+            <div class="timer-label">Next Check In</div>
+            <div class="timer-display" id="countdown">--:--:--</div>
+            <div class="status-badge" id="status-badge">
+                <span class="status-dot" id="status-dot"></span>
+                <span id="status-text">Loading...</span>
+            </div>
+            <div class="actions">
+                <button class="btn btn-primary" id="run-btn" onclick="triggerRun()">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                    </svg>
+                    Run Now
+                </button>
+                <button class="btn btn-secondary" onclick="refreshData()">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="23 4 23 10 17 10"></polyline>
+                        <polyline points="1 20 1 14 7 14"></polyline>
+                        <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+                    </svg>
+                    Refresh
+                </button>
+                <button class="btn btn-secondary" onclick="openSettings()">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="3"></circle>
+                        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+                    </svg>
+                    Settings
+                </button>
+            </div>
+        </section>
+
+        <!-- Stats Grid -->
+        <section class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-value total" id="stat-total">0</div>
+                <div class="stat-label">Total Created</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value content" id="stat-content">0</div>
+                <div class="stat-label">Content</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value message" id="stat-message">0</div>
+                <div class="stat-label">Message</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value email" id="stat-email">0</div>
+                <div class="stat-label">Email</div>
+            </div>
+        </section>
+
+        <!-- Config Section -->
+        <section class="config-section">
+            <div class="config-grid">
+                <div class="config-item">
+                    <div class="config-label">Content Dashboard</div>
+                    <div class="config-value" id="config-content">Loading...</div>
+                </div>
+                <div class="config-item">
+                    <div class="config-label">Message Dashboard</div>
+                    <div class="config-value" id="config-message">Loading...</div>
+                </div>
+                <div class="config-item">
+                    <div class="config-label">Email Dashboard</div>
+                    <div class="config-value" id="config-email">Loading...</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Activity Log -->
+        <section class="log-section">
+            <div class="log-header">
+                <h2>Activity Log</h2>
+                <span class="log-count" id="log-count">0 entries</span>
+            </div>
+            
+            <!-- Date Filter -->
+            <div class="log-filters">
+                <div class="filter-buttons">
+                    <button class="filter-btn active" data-filter="all" onclick="setFilter('all')">All</button>
+                    <button class="filter-btn" data-filter="today" onclick="setFilter('today')">Today</button>
+                    <button class="filter-btn" data-filter="7days" onclick="setFilter('7days')">Last 7 Days</button>
+                    <button class="filter-btn" data-filter="month" onclick="setFilter('month')">This Month</button>
+                    <button class="filter-btn" data-filter="year" onclick="setFilter('year')">This Year</button>
+                </div>
+                <div class="date-picker-container">
+                    <label for="date-picker">Select Date:</label>
+                    <input type="date" id="date-picker" onchange="filterByDate(this.value)">
+                    <button class="filter-btn clear-btn" onclick="clearDateFilter()">Clear</button>
+                </div>
+            </div>
+            
+            <div class="log-list" id="log-list">
+                <div class="empty-state">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                        <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path>
+                    </svg>
+                    <p>No dashboards created yet</p>
+                    <p style="font-size: 0.85rem; margin-top: 0.5rem;">Dashboards will appear here when created</p>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <script>
+        let countdownInterval;
+        let secondsRemaining = 0;
+        let allLogEntries = [];  // Store all entries for filtering
+        let currentFilter = 'all';
+        let selectedDate = null;
+
+        // Format seconds to HH:MM:SS
+        function formatTime(seconds) {
+            const h = Math.floor(seconds / 3600);
+            const m = Math.floor((seconds % 3600) / 60);
+            const s = seconds % 60;
+            return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+        }
+
+        // Format timestamp - exact date and time in 24h format with seconds
+        function formatTimestamp(isoString) {
+            const date = new Date(isoString);
+            
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            const hours = String(date.getHours()).padStart(2, '0');
+            const minutes = String(date.getMinutes()).padStart(2, '0');
+            const seconds = String(date.getSeconds()).padStart(2, '0');
+            
+            // Format: YYYY-MM-DD HH:MM:SS
+            return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+        }
+
+        // Filter entries by date range
+        function filterEntries(entries) {
+            if (selectedDate) {
+                // Filter by specific date
+                return entries.filter(entry => {
+                    const entryDate = new Date(entry.timestamp).toISOString().split('T')[0];
+                    return entryDate === selectedDate;
+                });
+            }
+            
+            const now = new Date();
+            const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+            
+            switch (currentFilter) {
+                case 'today':
+                    return entries.filter(entry => {
+                        const entryDate = new Date(entry.timestamp);
+                        return entryDate >= today;
+                    });
+                case '7days':
+                    const sevenDaysAgo = new Date(today);
+                    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+                    return entries.filter(entry => {
+                        const entryDate = new Date(entry.timestamp);
+                        return entryDate >= sevenDaysAgo;
+                    });
+                case 'month':
+                    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+                    return entries.filter(entry => {
+                        const entryDate = new Date(entry.timestamp);
+                        return entryDate >= startOfMonth;
+                    });
+                case 'year':
+                    const startOfYear = new Date(now.getFullYear(), 0, 1);
+                    return entries.filter(entry => {
+                        const entryDate = new Date(entry.timestamp);
+                        return entryDate >= startOfYear;
+                    });
+                default:
+                    return entries;
+            }
+        }
+
+        // Set filter and update UI
+        function setFilter(filter) {
+            currentFilter = filter;
+            selectedDate = null;
+            document.getElementById('date-picker').value = '';
+            
+            // Update active button
+            document.querySelectorAll('.filter-btn[data-filter]').forEach(btn => {
+                btn.classList.remove('active');
+                if (btn.dataset.filter === filter) {
+                    btn.classList.add('active');
+                }
+            });
+            
+            renderLogs();
+        }
+
+        // Filter by specific date from date picker
+        function filterByDate(dateValue) {
+            if (dateValue) {
+                selectedDate = dateValue;
+                currentFilter = 'custom';
+                
+                // Remove active from all filter buttons
+                document.querySelectorAll('.filter-btn[data-filter]').forEach(btn => {
+                    btn.classList.remove('active');
+                });
+                
+                renderLogs();
+            }
+        }
+
+        // Clear date filter
+        function clearDateFilter() {
+            selectedDate = null;
+            document.getElementById('date-picker').value = '';
+            setFilter('all');
+        }
+
+        // Render logs with current filter
+        function renderLogs() {
+            const logList = document.getElementById('log-list');
+            const filteredEntries = filterEntries(allLogEntries);
+            
+            document.getElementById('log-count').textContent = `${filteredEntries.length} of ${allLogEntries.length} entries`;
+            
+            if (filteredEntries.length === 0) {
+                logList.innerHTML = `
+                    <div class="empty-state">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                            <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path>
+                        </svg>
+                        <p>No dashboards found for selected filter</p>
+                        <p style="font-size: 0.85rem; margin-top: 0.5rem;">Try a different date range</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            logList.innerHTML = filteredEntries.map(entry => `
+                <div class="log-entry ${entry.status === 'deleted' ? 'deleted' : ''}">
+                    <span class="log-type ${entry.db_type}">${entry.db_type}</span>
+                    <div class="log-info">
+                        <div class="log-dashboard">${entry.dashboard_name}</div>
+                        <div class="log-database">${entry.status === 'deleted' ? 'Database decomposed' : `Database: ${entry.database_name} (ID: ${entry.database_id})`}</div>
+                    </div>
+                    <div class="log-time">${formatTimestamp(entry.timestamp)}</div>
+                    <div class="log-status">
+                        <span class="status-icon ${entry.status}">
+                            ${entry.status === 'success' ? '✓' : (entry.status === 'deleted' ? '🗑' : '✗')}
+                        </span>
+                        ${entry.status === 'success' && entry.dashboard_url ? 
+                            `<a href="${entry.dashboard_url}" target="_blank" class="log-link">Open →</a>` : 
+                            (entry.status === 'deleted' ? '<span style="color: #fbbf24; font-size: 0.8rem;">Deleted</span>' :
+                            (entry.error_message ? `<span style="color: var(--accent-red); font-size: 0.8rem;">${entry.error_message}</span>` : ''))
+                        }
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        // Update countdown display
+        function updateCountdown() {
+            if (secondsRemaining > 0) {
+                secondsRemaining--;
+                document.getElementById('countdown').textContent = formatTime(secondsRemaining);
+            }
+        }
+
+        // Fetch status
+        async function fetchStatus() {
+            try {
+                const response = await fetch('/api/status');
+                const data = await response.json();
+                
+                secondsRemaining = data.seconds_until_next;
+                document.getElementById('countdown').textContent = formatTime(secondsRemaining);
+                
+                const statusBadge = document.getElementById('status-badge');
+                const statusDot = document.getElementById('status-dot');
+                const statusText = document.getElementById('status-text');
+                const countdown = document.getElementById('countdown');
+                const runBtn = document.getElementById('run-btn');
+                
+                if (data.is_running) {
+                    statusBadge.classList.add('running');
+                    statusDot.classList.add('active');
+                    countdown.classList.add('running');
+                    runBtn.disabled = true;
+                } else {
+                    statusBadge.classList.remove('running');
+                    statusDot.classList.remove('active');
+                    countdown.classList.remove('running');
+                    runBtn.disabled = false;
+                }
+                
+                statusText.textContent = data.current_status;
+                
+            } catch (error) {
+                console.error('Failed to fetch status:', error);
+            }
+        }
+
+        // Fetch logs
+        async function fetchLogs() {
+            try {
+                const response = await fetch('/api/logs');
+                const data = await response.json();
+                
+                // Update stats
+                document.getElementById('stat-total').textContent = data.stats.success;
+                document.getElementById('stat-content').textContent = data.stats.by_type.content;
+                document.getElementById('stat-message').textContent = data.stats.by_type.message;
+                document.getElementById('stat-email').textContent = data.stats.by_type.email;
+                
+                // Store all entries for filtering
+                allLogEntries = data.entries;
+                
+                // Render with current filter
+                renderLogs();
+                
+            } catch (error) {
+                console.error('Failed to fetch logs:', error);
+            }
+        }
+
+        // Fetch config
+        async function fetchConfig() {
+            try {
+                const response = await fetch('/api/config');
+                const data = await response.json();
+                
+                const setConfigValue = (id, value) => {
+                    const el = document.getElementById(id);
+                    if (value) {
+                        el.textContent = `Source: ${value}`;
+                        el.classList.remove('not-set');
+                    } else {
+                        el.textContent = 'Not configured';
+                        el.classList.add('not-set');
+                    }
+                };
+                
+                setConfigValue('config-content', data.source_dashboards?.content);
+                setConfigValue('config-message', data.source_dashboards?.message);
+                setConfigValue('config-email', data.source_dashboards?.email);
+                
+            } catch (error) {
+                console.error('Failed to fetch config:', error);
+            }
+        }
+
+        // Trigger manual run
+        async function triggerRun() {
+            try {
+                const btn = document.getElementById('run-btn');
+                btn.disabled = true;
+                
+                const response = await fetch('/api/run', { method: 'POST' });
+                const data = await response.json();
+                
+                if (response.ok) {
+                    // Start polling for updates
+                    setTimeout(refreshData, 1000);
+                } else {
+                    alert(data.error || 'Failed to start check');
+                    btn.disabled = false;
+                }
+            } catch (error) {
+                console.error('Failed to trigger run:', error);
+                alert('Failed to start check');
+            }
+        }
+
+        // Refresh all data
+        function refreshData() {
+            fetchStatus();
+            fetchLogs();
+            fetchConfig();
+        }
+
+        // =====================
+        // Settings Modal
+        // =====================
+        
+        function openSettings() {
+            document.getElementById('settings-modal').classList.add('active');
+            loadSettings();
+        }
+
+        function closeSettings() {
+            document.getElementById('settings-modal').classList.remove('active');
+        }
+
+        async function loadSettings() {
+            try {
+                const response = await fetch('/api/settings');
+                const data = await response.json();
+                
+                // Populate Metabase credentials
+                document.getElementById('metabase-url').value = data.metabase?.base_url || '';
+                document.getElementById('metabase-username').value = data.metabase?.username || '';
+                document.getElementById('metabase-password').value = data.metabase?.password || '';
+                
+                // Populate source dashboards
+                document.getElementById('source-content').value = data.source_dashboards?.content || '';
+                document.getElementById('source-message').value = data.source_dashboards?.message || '';
+                document.getElementById('source-email').value = data.source_dashboards?.email || '';
+                
+                // Populate collections
+                document.getElementById('collection-content').value = data.dashboards_collections?.content || '';
+                document.getElementById('collection-message').value = data.dashboards_collections?.message || '';
+                document.getElementById('collection-email').value = data.dashboards_collections?.email || '';
+            } catch (error) {
+                console.error('Failed to load settings:', error);
+                showToast('Failed to load settings', 'error');
+            }
+        }
+
+        async function saveSettings() {
+            const saveBtn = document.getElementById('save-settings-btn');
+            saveBtn.disabled = true;
+            saveBtn.innerHTML = '<svg class="spin" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 11-6.219-8.56"></path></svg> Saving...';
+            
+            try {
+                const settings = {
+                    metabase: {
+                        base_url: document.getElementById('metabase-url').value.trim(),
+                        username: document.getElementById('metabase-username').value.trim(),
+                        password: document.getElementById('metabase-password').value
+                    },
+                    source_dashboards: {
+                        content: parseInt(document.getElementById('source-content').value) || null,
+                        message: parseInt(document.getElementById('source-message').value) || null,
+                        email: parseInt(document.getElementById('source-email').value) || null
+                    },
+                    dashboards_collections: {
+                        content: parseInt(document.getElementById('collection-content').value) || null,
+                        message: parseInt(document.getElementById('collection-message').value) || null,
+                        email: parseInt(document.getElementById('collection-email').value) || null
+                    }
+                };
+                
+                const response = await fetch('/api/settings', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(settings)
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    showToast('Settings saved successfully!', 'success');
+                    closeSettings();
+                    fetchConfig(); // Refresh the config display
+                } else {
+                    showToast(data.error || 'Failed to save settings', 'error');
+                }
+            } catch (error) {
+                console.error('Failed to save settings:', error);
+                showToast('Failed to save settings', 'error');
+            } finally {
+                saveBtn.disabled = false;
+                saveBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg> Save Settings';
+            }
+        }
+
+        async function testConnection() {
+            const testBtn = document.getElementById('test-connection-btn');
+            testBtn.disabled = true;
+            testBtn.innerHTML = '<svg class="spin" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 11-6.219-8.56"></path></svg> Testing...';
+            
+            try {
+                const response = await fetch('/api/test-connection', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        base_url: document.getElementById('metabase-url').value.trim(),
+                        username: document.getElementById('metabase-username').value.trim(),
+                        password: document.getElementById('metabase-password').value
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    showToast('Connection successful!', 'success');
+                } else {
+                    showToast(data.error || 'Connection failed', 'error');
+                }
+            } catch (error) {
+                console.error('Connection test failed:', error);
+                showToast('Connection test failed', 'error');
+            } finally {
+                testBtn.disabled = false;
+                testBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg> Test Connection';
+            }
+        }
+
+        function showToast(message, type) {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.className = `toast ${type} show`;
+            
+            setTimeout(() => {
+                toast.classList.remove('show');
+            }, 3000);
+        }
+
+        // Close modal on overlay click
+        document.addEventListener('click', (e) => {
+            if (e.target.classList.contains('modal-overlay')) {
+                closeSettings();
+            }
+        });
+
+        // Close modal on Escape key
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                closeSettings();
+            }
+        });
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            refreshData();
+            
+            // Update countdown every second
+            countdownInterval = setInterval(updateCountdown, 1000);
+            
+            // Refresh data every 5 seconds
+            setInterval(refreshData, 5000);
+        });
+    </script>
+
+    <!-- Settings Modal -->
+    <div class="modal-overlay" id="settings-modal">
+        <div class="modal">
+            <div class="modal-header">
+                <h2>
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="3"></circle>
+                        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+                    </svg>
+                    Settings
+                </h2>
+                <button class="modal-close" onclick="closeSettings()">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                </button>
+            </div>
+            
+            <div class="modal-body">
+                <!-- Metabase Credentials -->
+                <div class="settings-section">
+                    <h3>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                            <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                        </svg>
+                        Metabase Connection
+                    </h3>
+                    <div class="form-group">
+                        <label for="metabase-url">Metabase URL</label>
+                        <input type="url" id="metabase-url" class="form-input" placeholder="https://your-metabase.com">
+                    </div>
+                    <div class="form-group">
+                        <label for="metabase-username">Username / Email</label>
+                        <input type="text" id="metabase-username" class="form-input" placeholder="admin@example.com">
+                    </div>
+                    <div class="form-group">
+                        <label for="metabase-password">Password</label>
+                        <input type="password" id="metabase-password" class="form-input" placeholder="••••••••">
+                    </div>
+                </div>
+
+                <!-- Source Dashboards -->
+                <div class="settings-section">
+                    <h3>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                            <line x1="3" y1="9" x2="21" y2="9"></line>
+                            <line x1="9" y1="21" x2="9" y2="9"></line>
+                        </svg>
+                        Source Dashboard IDs (Templates to Clone)
+                    </h3>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="source-content">Content</label>
+                            <input type="number" id="source-content" class="form-input" placeholder="Dashboard ID">
+                        </div>
+                        <div class="form-group">
+                            <label for="source-message">Message</label>
+                            <input type="number" id="source-message" class="form-input" placeholder="Dashboard ID">
+                        </div>
+                        <div class="form-group">
+                            <label for="source-email">Email</label>
+                            <input type="number" id="source-email" class="form-input" placeholder="Dashboard ID">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Dashboards Collections -->
+                <div class="settings-section">
+                    <h3>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+                        </svg>
+                        _DASHBOARDS Collection IDs (Where to Store)
+                    </h3>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="collection-content">Content</label>
+                            <input type="number" id="collection-content" class="form-input" placeholder="Collection ID">
+                        </div>
+                        <div class="form-group">
+                            <label for="collection-message">Message</label>
+                            <input type="number" id="collection-message" class="form-input" placeholder="Collection ID">
+                        </div>
+                        <div class="form-group">
+                            <label for="collection-email">Email</label>
+                            <input type="number" id="collection-email" class="form-input" placeholder="Collection ID">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="modal-footer">
+                <button class="test-btn" id="test-connection-btn" onclick="testConnection()">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                        <polyline points="22 4 12 14.01 9 11.01"></polyline>
+                    </svg>
+                    Test Connection
+                </button>
+                <button class="save-btn" id="save-settings-btn" onclick="saveSettings()">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>
+                        <polyline points="17 21 17 13 7 13 7 21"></polyline>
+                        <polyline points="7 3 7 8 15 8"></polyline>
+                    </svg>
+                    Save Settings
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notification -->
+    <div class="toast" id="toast"></div>
+</body>
+</html>

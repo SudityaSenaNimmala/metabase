@@ -1,0 +1,16 @@
+{
+    "source_dashboards": {
+        "content": 2,
+        "message": 197,
+        "email": 3
+    },
+    "dashboards_collections": {
+        "content": 86,
+        "message": 130,
+        "email": 129
+    },
+    "notes": {
+        "source_dashboards": "Template dashboard IDs to clone for each type",
+        "dashboards_collections": "_DASHBOARDS collection IDs where main dashboards will be stored for each type"
+    }
+}
