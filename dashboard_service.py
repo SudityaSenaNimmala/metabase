@@ -56,15 +56,58 @@ class ActivityLogEntry:
 
 
 class ActivityLog:
-    """Manages the activity log for dashboard creation"""
+    """Manages the activity log for dashboard creation - uses MongoDB if available, falls back to file"""
     
     def __init__(self, log_file: str = LOG_FILE):
         self.log_file = log_file
         self.entries: List[ActivityLogEntry] = []
+        self.mongo_client = None
+        self.mongo_db = None
+        self.mongo_collection = None
+        self.use_mongodb = False
+        
+        # Try to connect to MongoDB
+        self._init_mongodb()
+        
+        # Load existing entries
         self.load()
     
+    def _init_mongodb(self):
+        """Initialize MongoDB connection if MONGODB_URI is set"""
+        mongodb_uri = os.environ.get('MONGODB_URI')
+        if mongodb_uri:
+            try:
+                from pymongo import MongoClient
+                self.mongo_client = MongoClient(mongodb_uri, serverSelectionTimeoutMS=5000)
+                # Test connection
+                self.mongo_client.admin.command('ping')
+                self.mongo_db = self.mongo_client['metabase_dashboard_service']
+                self.mongo_collection = self.mongo_db['activity_log']
+                self.use_mongodb = True
+                logging.info("Connected to MongoDB for activity log storage")
+            except Exception as e:
+                logging.warning(f"Could not connect to MongoDB, using file storage: {e}")
+                self.use_mongodb = False
+        else:
+            logging.info("MONGODB_URI not set, using file storage for activity log")
+    
     def load(self):
-        """Load existing log from file"""
+        """Load existing log from MongoDB or file"""
+        if self.use_mongodb:
+            try:
+                # Load from MongoDB (sorted by timestamp descending)
+                cursor = self.mongo_collection.find().sort('timestamp', -1)
+                self.entries = []
+                for doc in cursor:
+                    # Remove MongoDB _id field
+                    doc.pop('_id', None)
+                    self.entries.append(ActivityLogEntry(**doc))
+                logging.info(f"Loaded {len(self.entries)} entries from MongoDB")
+                return
+            except Exception as e:
+                logging.error(f"Failed to load from MongoDB: {e}")
+        
+        # Fallback to file
         try:
             if os.path.exists(self.log_file):
                 with open(self.log_file, 'r') as f:
@@ -75,7 +118,7 @@ class ActivityLog:
             self.entries = []
     
     def save(self):
-        """Save log to file"""
+        """Save log to file (for backup, MongoDB saves on add_entry)"""
         try:
             with open(self.log_file, 'w') as f:
                 json.dump({
@@ -88,14 +131,70 @@ class ActivityLog:
     def add_entry(self, entry: ActivityLogEntry):
         """Add a new entry to the log"""
         self.entries.insert(0, entry)  # Add to beginning (newest first)
+        
+        if self.use_mongodb:
+            try:
+                # Insert into MongoDB
+                self.mongo_collection.insert_one(asdict(entry))
+                logging.debug(f"Saved entry to MongoDB: {entry.dashboard_name}")
+            except Exception as e:
+                logging.error(f"Failed to save to MongoDB: {e}")
+        
+        # Also save to file as backup
         self.save()
     
     def get_entries(self, limit: int = 100) -> List[dict]:
         """Get log entries as dictionaries"""
+        if self.use_mongodb:
+            try:
+                cursor = self.mongo_collection.find().sort('timestamp', -1).limit(limit)
+                entries = []
+                for doc in cursor:
+                    doc.pop('_id', None)
+                    entries.append(doc)
+                return entries
+            except Exception as e:
+                logging.error(f"Failed to get entries from MongoDB: {e}")
+        
         return [asdict(e) for e in self.entries[:limit]]
     
     def get_stats(self) -> dict:
         """Get statistics from the log"""
+        if self.use_mongodb:
+            try:
+                # Use MongoDB aggregation for stats
+                pipeline = [
+                    {
+                        '$group': {
+                            '_id': None,
+                            'total': {'$sum': 1},
+                            'success': {'$sum': {'$cond': [{'$eq': ['$status', 'success']}, 1, 0]}},
+                            'deleted': {'$sum': {'$cond': [{'$eq': ['$status', 'deleted']}, 1, 0]}},
+                            'failed': {'$sum': {'$cond': [{'$eq': ['$status', 'failed']}, 1, 0]}},
+                            'content': {'$sum': {'$cond': [{'$and': [{'$eq': ['$status', 'success']}, {'$eq': ['$db_type', 'content']}]}, 1, 0]}},
+                            'message': {'$sum': {'$cond': [{'$and': [{'$eq': ['$status', 'success']}, {'$eq': ['$db_type', 'message']}]}, 1, 0]}},
+                            'email': {'$sum': {'$cond': [{'$and': [{'$eq': ['$status', 'success']}, {'$eq': ['$db_type', 'email']}]}, 1, 0]}}
+                        }
+                    }
+                ]
+                result = list(self.mongo_collection.aggregate(pipeline))
+                if result:
+                    r = result[0]
+                    return {
+                        "total": r.get('total', 0),
+                        "success": r.get('success', 0),
+                        "failed": r.get('failed', 0),
+                        "deleted": r.get('deleted', 0),
+                        "by_type": {
+                            "content": r.get('content', 0),
+                            "message": r.get('message', 0),
+                            "email": r.get('email', 0)
+                        }
+                    }
+            except Exception as e:
+                logging.error(f"Failed to get stats from MongoDB: {e}")
+        
+        # Fallback to in-memory calculation
         total = len(self.entries)
         success = sum(1 for e in self.entries if e.status == "success")
         deleted = sum(1 for e in self.entries if e.status == "deleted")
