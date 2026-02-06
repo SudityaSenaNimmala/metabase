@@ -401,6 +401,40 @@ class DashboardCloner:
             remapped.append(mapping_copy)
         return remapped
     
+    def remap_dashboard_parameters(self, parameters: list) -> list:
+        """
+        Remap dashboard parameters (filters) to use cloned question IDs.
+        
+        Dashboard filters can have a values_source_config that specifies a card_id
+        to fetch dropdown values from. This needs to be remapped to the cloned question.
+        """
+        if not parameters:
+            return []
+        
+        remapped = []
+        for param in parameters:
+            param_copy = json.loads(json.dumps(param))  # Deep copy
+            
+            # Check for values_source_config with card_id
+            values_source = param_copy.get('values_source_config', {})
+            if values_source and 'card_id' in values_source:
+                old_card_id = values_source['card_id']
+                if old_card_id in self.question_mapping:
+                    new_card_id = self.question_mapping[old_card_id]
+                    values_source['card_id'] = new_card_id
+                    logger.info(f"  Remapped filter '{param_copy.get('name', 'Unknown')}' values_source: card {old_card_id} -> {new_card_id}")
+                else:
+                    logger.warning(f"  Filter '{param_copy.get('name', 'Unknown')}' references card {old_card_id} which wasn't cloned")
+            
+            # Also check for values_query_type = "card" which indicates card-based values
+            if param_copy.get('values_query_type') == 'card' and values_source:
+                # Already handled above, but log for debugging
+                logger.debug(f"  Filter '{param_copy.get('name', 'Unknown')}' uses card-based values")
+            
+            remapped.append(param_copy)
+        
+        return remapped
+    
     def clone_question(self, question_id: int, new_name: str, 
                       new_database_id: int, collection_id: int = None,
                       max_retries: int = 3) -> dict:
@@ -934,11 +968,11 @@ class DashboardCloner:
         # This allows click behaviors that link to the same dashboard to be properly updated
         self.dashboard_mapping[source_dashboard_id] = new_dashboard['id']
         
-        # Copy dashboard parameters (filters)
+        # Store dashboard parameters (filters) - will be remapped AFTER questions are cloned
+        # because filter dropdowns may reference questions for their values
         dashboard_params = source.get('parameters', [])
         if dashboard_params:
-            self.manager.update_dashboard(new_dashboard['id'], {'parameters': dashboard_params})
-            logger.info(f"Copied {len(dashboard_params)} dashboard filters")
+            logger.info(f"Found {len(dashboard_params)} dashboard filters - will remap after cloning questions")
         
         # Prepare tabs for later - will be created together with dashcards
         tab_mapping = {}  # old_tab_id -> new_tab_id  
@@ -986,6 +1020,13 @@ class DashboardCloner:
                 self.question_mapping[original_id] = cloned['id']
         
         logger.info(f"\nCloned {len(self.question_mapping)} questions")
+        
+        # Now remap and apply dashboard parameters (filters)
+        # This must happen AFTER questions are cloned so we can remap card references
+        if dashboard_params:
+            remapped_params = self.remap_dashboard_parameters(dashboard_params)
+            self.manager.update_dashboard(new_dashboard['id'], {'parameters': remapped_params})
+            logger.info(f"Applied {len(remapped_params)} remapped dashboard filters")
         
         # Phase 2: Prepare all cards for batch add
         logger.info(f"\n--- Preparing cards for dashboard ---")
