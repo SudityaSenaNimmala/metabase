@@ -98,10 +98,26 @@ class DatabaseIdentifier:
         self.headers = {}
         
     def _load_config(self, config_file: str) -> dict:
-        """Load configuration from file"""
+        """Load configuration from file or environment variables"""
         try:
             with open(config_file, 'r') as f:
                 return json.load(f)
+        except FileNotFoundError:
+            # Fall back to environment variables
+            metabase_url = os.environ.get('METABASE_URL')
+            metabase_username = os.environ.get('METABASE_USERNAME')
+            metabase_password = os.environ.get('METABASE_PASSWORD')
+            
+            if metabase_url and metabase_username and metabase_password:
+                logger.info("Loaded config from environment variables")
+                return {
+                    'base_url': metabase_url,
+                    'username': metabase_username,
+                    'password': metabase_password
+                }
+            else:
+                logger.error("Config file not found and environment variables not set")
+                raise
         except Exception as e:
             logger.error(f"Failed to load config: {e}")
             raise
