@@ -4,6 +4,7 @@ Scans all Metabase databases and identifies their type (content/message/email)
 based on the tables/collections that exist in each database.
 """
 
+import os
 import sys
 import json
 import logging
