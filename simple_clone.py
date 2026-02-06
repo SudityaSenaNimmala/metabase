@@ -47,6 +47,8 @@ class DashboardCloner:
         self.field_mapping = {}  # old_field_id -> new_field_id
         self.question_mapping = {}  # old_question_id -> new_question_id
         self.dashboard_mapping = {}  # old_dashboard_id -> new_dashboard_id
+        self.tab_mapping = {}  # old_tab_id -> new_tab_id (legacy, for single dashboard)
+        self.dashboard_tab_mappings = {}  # new_dashboard_id -> {old_tab_id -> new_tab_id}
         
     def authenticate(self) -> bool:
         """Authenticate with Metabase"""
@@ -277,32 +279,31 @@ class DashboardCloner:
                     if isinstance(item, (dict, list)):
                         self._remap_fields_recursive(item)
     
-    def remap_click_behavior(self, viz_settings: dict) -> dict:
-        """Remap click behavior to point to new dashboards/questions"""
+    def remap_click_behavior(self, viz_settings: dict, tab_mapping: dict = None) -> dict:
+        """Remap click behavior to point to new dashboards/questions/tabs"""
         if not viz_settings:
             return viz_settings
         
         viz_settings = json.loads(json.dumps(viz_settings))  # Deep copy
         
-        # Handle top-level click_behavior
+        # Handle top-level click_behavior (only once!)
         if 'click_behavior' in viz_settings:
-            self._remap_single_click_behavior(viz_settings['click_behavior'])
+            self._remap_single_click_behavior(viz_settings['click_behavior'], tab_mapping)
         
         # Handle column-specific click behaviors (in column_settings)
         if 'column_settings' in viz_settings:
             for col_key, col_settings in viz_settings['column_settings'].items():
                 if 'click_behavior' in col_settings:
-                    self._remap_single_click_behavior(col_settings['click_behavior'])
+                    self._remap_single_click_behavior(col_settings['click_behavior'], tab_mapping)
         
-        # Handle click behaviors in graph.dimensions, etc.
-        for key in ['click', 'click_behavior']:
-            if key in viz_settings:
-                if isinstance(viz_settings[key], dict):
-                    self._remap_single_click_behavior(viz_settings[key])
+        # Handle 'click' key (different from 'click_behavior') for graph.dimensions, etc.
+        # NOTE: Don't process 'click_behavior' again - it was already handled above!
+        if 'click' in viz_settings and isinstance(viz_settings['click'], dict):
+            self._remap_single_click_behavior(viz_settings['click'], tab_mapping)
         
         return viz_settings
     
-    def _remap_single_click_behavior(self, click_behavior: dict):
+    def _remap_single_click_behavior(self, click_behavior: dict, tab_mapping: dict = None):
         """Remap a single click behavior object"""
         if not click_behavior or not isinstance(click_behavior, dict):
             return
@@ -310,8 +311,11 @@ class DashboardCloner:
         link_type = click_behavior.get('linkType')
         target_id = click_behavior.get('targetId')
         
+        logger.debug(f"    Processing click_behavior: linkType={link_type}, targetId={target_id}, tabId={click_behavior.get('tabId')}")
+        
         if link_type == 'dashboard' and target_id:
             # Remap to new dashboard (including self-references)
+            new_target = target_id
             if target_id in self.dashboard_mapping:
                 new_target = self.dashboard_mapping[target_id]
                 click_behavior['targetId'] = new_target
@@ -319,6 +323,41 @@ class DashboardCloner:
                     logger.debug(f"    Dashboard link unchanged: {target_id}")
                 else:
                     logger.info(f"    Remapped dashboard link: {target_id} -> {new_target}")
+            
+            # Remap tab ID if present (dashboard tab navigation)
+            if 'tabId' in click_behavior:
+                old_tab_id = click_behavior['tabId']
+                
+                logger.info(f"    Tab remapping: old_tab_id={old_tab_id}, new_target={new_target}")
+                logger.info(f"    Available dashboard_tab_mappings: {self.dashboard_tab_mappings}")
+                
+                # First, try to get the tab mapping for the TARGET dashboard
+                # This is important when a dashboard links to itself or another cloned dashboard
+                effective_tab_mapping = None
+                
+                # Check if we have a specific tab mapping for the target dashboard
+                if new_target in self.dashboard_tab_mappings:
+                    effective_tab_mapping = self.dashboard_tab_mappings[new_target]
+                    logger.info(f"    Found tab mapping for target dashboard {new_target}: {effective_tab_mapping}")
+                elif tab_mapping:
+                    # Fall back to provided tab_mapping (for backward compatibility)
+                    effective_tab_mapping = tab_mapping
+                    logger.info(f"    Using fallback tab_mapping: {effective_tab_mapping}")
+                
+                if effective_tab_mapping:
+                    # Check if tabId needs remapping (is it a key in the mapping?)
+                    if old_tab_id in effective_tab_mapping:
+                        click_behavior['tabId'] = effective_tab_mapping[old_tab_id]
+                        logger.info(f"    Remapped tab link: {old_tab_id} -> {effective_tab_mapping[old_tab_id]}")
+                    elif old_tab_id in effective_tab_mapping.values():
+                        # tabId is already a NEW tab ID (already remapped) - don't touch it!
+                        logger.info(f"    Tab {old_tab_id} is already a new tab ID - skipping remap")
+                    else:
+                        # Tab ID not in mapping as key or value - it's invalid, clear it
+                        logger.warning(f"    Tab {old_tab_id} not found in mapping for dashboard {new_target} - clearing tabId")
+                        del click_behavior['tabId']
+                else:
+                    logger.warning(f"    No tab mapping available for dashboard {new_target} - keeping original tabId {old_tab_id}")
         
         elif link_type == 'question' and target_id:
             # Remap to new question
@@ -624,10 +663,16 @@ class DashboardCloner:
             logger.error(f"  x Failed to update dashcards: {e}")
             return False
     
-    def update_dashboard_click_behaviors(self, dashboard_id: int) -> bool:
+    def update_dashboard_click_behaviors(self, dashboard_id: int, tab_mapping: dict = None) -> bool:
         """
         Update click behaviors in a dashboard with the current mapping.
         Call this after all dashboards are cloned to fix cross-references.
+        
+        Args:
+            dashboard_id: The dashboard to update
+            tab_mapping: Optional mapping of old_tab_id -> new_tab_id for tab links
+                        (Note: per-dashboard tab mappings in self.dashboard_tab_mappings
+                        take precedence for cross-dashboard tab references)
         """
         try:
             # Get current dashboard
@@ -648,12 +693,37 @@ class DashboardCloner:
             
             for dc in dashcards:
                 viz_settings = dc.get('visualization_settings', {})
+                card_name = dc.get('card', {}).get('name', 'Unknown')
+                
                 if viz_settings:
-                    original = json.dumps(viz_settings)
-                    remapped = self.remap_click_behavior(viz_settings)
-                    if json.dumps(remapped) != original:
+                    original = json.dumps(viz_settings, sort_keys=True)
+                    logger.debug(f"  Checking dashcard '{card_name}' viz_settings before remap")
+                    
+                    # Log click behaviors before remapping
+                    if 'click_behavior' in viz_settings:
+                        logger.info(f"    Before remap - click_behavior: targetId={viz_settings['click_behavior'].get('targetId')}, tabId={viz_settings['click_behavior'].get('tabId', 'NOT SET')}")
+                    if 'column_settings' in viz_settings:
+                        for col_key, col_settings in viz_settings['column_settings'].items():
+                            if 'click_behavior' in col_settings:
+                                cb = col_settings['click_behavior']
+                                logger.info(f"    Before remap - column click_behavior: targetId={cb.get('targetId')}, tabId={cb.get('tabId', 'NOT SET')}")
+                    
+                    remapped = self.remap_click_behavior(viz_settings, tab_mapping)
+                    
+                    # Log click behaviors after remapping
+                    if 'click_behavior' in remapped:
+                        logger.info(f"    After remap - click_behavior: targetId={remapped['click_behavior'].get('targetId')}, tabId={remapped['click_behavior'].get('tabId', 'NOT SET')}")
+                    if 'column_settings' in remapped:
+                        for col_key, col_settings in remapped['column_settings'].items():
+                            if 'click_behavior' in col_settings:
+                                cb = col_settings['click_behavior']
+                                logger.info(f"    After remap - column click_behavior: targetId={cb.get('targetId')}, tabId={cb.get('tabId', 'NOT SET')}")
+                    
+                    remapped_str = json.dumps(remapped, sort_keys=True)
+                    if remapped_str != original:
                         changes_made = True
                         dc['visualization_settings'] = remapped
+                        logger.info(f"    Changes detected for '{card_name}'")
                 
                 dashcard_update = {
                     'id': dc['id'],
@@ -729,6 +799,69 @@ class DashboardCloner:
                     linked_dashboards.add(cb['targetId'])
         
         return linked_dashboards
+    
+    def diagnose_click_behaviors(self, dashboard_id: int):
+        """
+        Diagnostic function to print all click behaviors in a dashboard.
+        Use this to debug tab navigation issues.
+        """
+        dashboard = self.manager.get_dashboard(dashboard_id)
+        if not dashboard:
+            logger.error(f"Dashboard {dashboard_id} not found")
+            return
+        
+        logger.info(f"\n{'='*60}")
+        logger.info(f"CLICK BEHAVIOR DIAGNOSIS FOR DASHBOARD {dashboard_id}")
+        logger.info(f"Dashboard name: {dashboard.get('name')}")
+        logger.info(f"{'='*60}")
+        
+        # Show tabs
+        tabs = dashboard.get('tabs', [])
+        if tabs:
+            logger.info(f"\nTabs ({len(tabs)}):")
+            for tab in tabs:
+                logger.info(f"  - ID: {tab.get('id')}, Name: {tab.get('name')}")
+        else:
+            logger.info("\nNo tabs in this dashboard")
+        
+        # Show click behaviors
+        dashcards = dashboard.get('dashcards', []) or dashboard.get('ordered_cards', [])
+        logger.info(f"\nDashcards ({len(dashcards)}):")
+        
+        for i, dashcard in enumerate(dashcards):
+            card_info = dashcard.get('card', {})
+            card_name = card_info.get('name', 'Unknown')
+            dashcard_tab = dashcard.get('dashboard_tab_id')
+            
+            logger.info(f"\n  [{i+1}] Card: {card_name}")
+            logger.info(f"      Dashcard ID: {dashcard.get('id')}")
+            logger.info(f"      On Tab ID: {dashcard_tab}")
+            
+            viz_settings = dashcard.get('visualization_settings', {})
+            
+            # Top-level click behavior
+            if 'click_behavior' in viz_settings:
+                cb = viz_settings['click_behavior']
+                logger.info(f"      Top-level click_behavior:")
+                logger.info(f"        linkType: {cb.get('linkType')}")
+                logger.info(f"        targetId: {cb.get('targetId')}")
+                logger.info(f"        tabId: {cb.get('tabId', 'NOT SET')}")
+                if 'parameterMapping' in cb:
+                    logger.info(f"        parameterMapping: {list(cb['parameterMapping'].keys())}")
+            
+            # Column settings click behaviors
+            if 'column_settings' in viz_settings:
+                for col_key, col_settings in viz_settings['column_settings'].items():
+                    if 'click_behavior' in col_settings:
+                        cb = col_settings['click_behavior']
+                        logger.info(f"      Column click_behavior [{col_key[:30]}...]:")
+                        logger.info(f"        linkType: {cb.get('linkType')}")
+                        logger.info(f"        targetId: {cb.get('targetId')}")
+                        logger.info(f"        tabId: {cb.get('tabId', 'NOT SET')}")
+                        if 'parameterMapping' in cb:
+                            logger.info(f"        parameterMapping: {list(cb['parameterMapping'].keys())}")
+        
+        logger.info(f"\n{'='*60}\n")
     
     def clone_dashboard(self, source_dashboard_id: int, new_name: str,
                        new_database_id: int, dashboard_collection_id: int = None,
@@ -902,6 +1035,13 @@ class DashboardCloner:
             # Remap visualization settings (click behavior)
             viz_settings = dashcard.get('visualization_settings', {})
             if viz_settings:
+                # Log original click behaviors for debugging
+                if 'click_behavior' in viz_settings:
+                    logger.info(f"  Original click_behavior: {json.dumps(viz_settings['click_behavior'], indent=2)}")
+                if 'column_settings' in viz_settings:
+                    for col_key, col_settings in viz_settings['column_settings'].items():
+                        if 'click_behavior' in col_settings:
+                            logger.info(f"  Original column click_behavior [{col_key}]: {json.dumps(col_settings['click_behavior'], indent=2)}")
                 viz_settings = self.remap_click_behavior(viz_settings)
             
             # Remap series (for combined charts)
@@ -979,6 +1119,11 @@ class DashboardCloner:
             # Update tab_mapping with actual IDs
             if actual_tab_mapping:
                 tab_mapping = actual_tab_mapping
+                # Store tab mapping for use in click behavior updates
+                self.tab_mapping = actual_tab_mapping
+                # Also store per-dashboard tab mapping for cross-dashboard tab references
+                self.dashboard_tab_mappings[new_dashboard['id']] = actual_tab_mapping
+                logger.info(f"  Stored tab mapping for dashboard {new_dashboard['id']}: {actual_tab_mapping}")
             
             if not success:
                 logger.error("  Failed to add cards to dashboard!")
@@ -989,6 +1134,16 @@ class DashboardCloner:
                     final_cards = updated.get('dashcards', []) or updated.get('ordered_cards', [])
                     final_tabs = updated.get('tabs', [])
                     logger.info(f"  Verified: Dashboard has {len(final_cards)} cards, {len(final_tabs)} tabs")
+        
+        # Phase 3: Update click behaviors with actual tab IDs
+        # This is needed because click behaviors may reference tabs on the target dashboard
+        # and we now have the real tab IDs after creation
+        if tab_mapping:
+            logger.info(f"\n--- Updating click behaviors with tab mappings ---")
+            logger.info(f"  tab_mapping: {tab_mapping}")
+            logger.info(f"  dashboard_tab_mappings: {self.dashboard_tab_mappings}")
+            logger.info(f"  dashboard_mapping: {self.dashboard_mapping}")
+            self.update_dashboard_click_behaviors(new_dashboard['id'], tab_mapping)
         
         logger.info(f"\n=== Dashboard cloned successfully! ===")
         
@@ -1048,6 +1203,8 @@ class DashboardCloner:
         # Reset mappings for fresh clone
         self.dashboard_mapping = {}
         self.question_mapping = {}
+        self.tab_mapping = {}
+        self.dashboard_tab_mappings = {}
         
         # Find all linked dashboards (in order: deepest first)
         logger.info(f"\nFinding all linked dashboards from {source_dashboard_id}...")
@@ -1117,13 +1274,22 @@ class DashboardCloner:
         # SECOND PASS: Update click behaviors with complete mapping
         # This is needed because when cloning inner dashboards, the main dashboard
         # and other dashboards cloned after them weren't in the mapping yet
+        # Also updates tab references in click behaviors
         logger.info("\n" + "-"*70)
         logger.info("UPDATING CLICK BEHAVIORS WITH COMPLETE MAPPING...")
         logger.info("-"*70)
         
+        # Log available tab mappings for debugging
+        if self.dashboard_tab_mappings:
+            logger.info(f"  Available tab mappings for {len(self.dashboard_tab_mappings)} dashboards:")
+            for dash_id, tab_map in self.dashboard_tab_mappings.items():
+                logger.info(f"    Dashboard {dash_id}: {tab_map}")
+        
         for old_id, new_id in self.dashboard_mapping.items():
             try:
-                self.update_dashboard_click_behaviors(new_id)
+                # Pass tab_mapping as fallback, but _remap_single_click_behavior will
+                # use dashboard_tab_mappings for the target dashboard when available
+                self.update_dashboard_click_behaviors(new_id, self.tab_mapping)
                 logger.info(f"  Updated click behaviors for dashboard {new_id}")
             except Exception as e:
                 logger.error(f"  Failed to update click behaviors for {new_id}: {e}")
@@ -1427,6 +1593,24 @@ def run_clone(source_id: int, customer_name: str, database_name: str,
     return new_dashboard
 
 
+def diagnose_dashboard(dashboard_id: int):
+    """Run click behavior diagnosis on a dashboard"""
+    config = load_config()
+    if not config:
+        print("ERROR: Please edit metabase_config.json with your credentials")
+        return
+    
+    cloner = DashboardCloner(config)
+    
+    print("Connecting to Metabase...")
+    if not cloner.authenticate():
+        print("ERROR: Authentication failed!")
+        return
+    print("Connected!\n")
+    
+    cloner.diagnose_click_behaviors(dashboard_id)
+
+
 if __name__ == "__main__":
     import argparse
     
@@ -1434,11 +1618,15 @@ if __name__ == "__main__":
     parser.add_argument('--source', '-s', type=int, help='Source dashboard ID')
     parser.add_argument('--customer', '-c', type=str, help='Customer name (used for dashboard and collection names)')
     parser.add_argument('--database', '-d', type=str, help='Target database name')
+    parser.add_argument('--diagnose', type=int, help='Diagnose click behaviors in a dashboard (provide dashboard ID)')
     
     args = parser.parse_args()
     
+    # If diagnose mode
+    if args.diagnose:
+        diagnose_dashboard(args.diagnose)
     # If all required args provided, run non-interactively
-    if args.source and args.customer and args.database:
+    elif args.source and args.customer and args.database:
         try:
             run_clone(
                 source_id=args.source,
