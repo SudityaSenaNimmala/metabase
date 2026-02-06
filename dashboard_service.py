@@ -136,17 +136,41 @@ class DashboardService:
         self._load_configs()
     
     def _load_configs(self):
-        """Load configuration files"""
+        """Load configuration files or fall back to environment variables"""
+        # Try loading from file first, then fall back to environment variables
         try:
             with open(METABASE_CONFIG_FILE, 'r') as f:
                 self.metabase_config = json.load(f)
                 self.base_url = self.metabase_config['base_url'].rstrip('/')
+        except FileNotFoundError:
+            # Fall back to environment variables
+            metabase_url = os.environ.get('METABASE_URL')
+            metabase_username = os.environ.get('METABASE_USERNAME')
+            metabase_password = os.environ.get('METABASE_PASSWORD')
+            
+            if metabase_url and metabase_username and metabase_password:
+                self.metabase_config = {
+                    'base_url': metabase_url,
+                    'username': metabase_username,
+                    'password': metabase_password
+                }
+                self.base_url = metabase_url.rstrip('/')
+                logging.info("Loaded metabase config from environment variables")
+            else:
+                logging.error("Metabase config file not found and environment variables not set (METABASE_URL, METABASE_USERNAME, METABASE_PASSWORD)")
         except Exception as e:
             logging.error(f"Failed to load metabase config: {e}")
         
         try:
             with open(CONFIG_FILE, 'r') as f:
                 self.auto_config = json.load(f)
+        except FileNotFoundError:
+            # Create default auto_config if not found
+            self.auto_config = {
+                "source_dashboards": {},
+                "mappings": []
+            }
+            logging.info("Auto clone config not found, using defaults")
         except Exception as e:
             logging.error(f"Failed to load auto clone config: {e}")
     
