@@ -178,77 +178,19 @@ class DashboardService:
         """Reload configuration files"""
         self._load_configs()
     
-    def _get_databases_by_type_cached(self, identifier) -> Dict[str, List]:
+    def _get_databases_by_type(self, identifier) -> Dict[str, List]:
         """
-        Get databases by type with caching.
-        Cache is valid for 24 hours - database types don't change often.
+        Get databases by type - always scans fresh from Metabase.
         """
-        cache_file = "db_type_cache.json"
-        cache_max_age = 24 * 60 * 60  # 24 hours in seconds
-        
-        # Try to load from cache
-        try:
-            if os.path.exists(cache_file):
-                with open(cache_file, 'r') as f:
-                    cache_data = json.load(f)
-                
-                cache_time = datetime.fromisoformat(cache_data.get('timestamp', '2000-01-01'))
-                age = (datetime.now() - cache_time).total_seconds()
-                
-                if age < cache_max_age:
-                    logging.info(f"Using cached database types (age: {age/3600:.1f} hours)")
-                    
-                    # Convert back to DatabaseInfo objects
-                    from db_identifier import DatabaseInfo
-                    grouped = {"content": [], "message": [], "email": [], "unknown": []}
-                    
-                    for db_type, dbs in cache_data.get('databases', {}).items():
-                        for db in dbs:
-                            info = DatabaseInfo(
-                                id=db['id'],
-                                name=db['name'],
-                                engine=db.get('engine', 'unknown'),
-                                tables=[],  # Don't need tables for cloning
-                                identified_type=db_type if db_type != 'unknown' else None,
-                                match_confidence=db.get('confidence', 0),
-                                matched_tables=db.get('matched_tables', [])
-                            )
-                            grouped[db_type].append(info)
-                    
-                    return grouped
-                else:
-                    logging.info(f"Cache expired (age: {age/3600:.1f} hours), rescanning...")
-        except Exception as e:
-            logging.warning(f"Could not load cache: {e}")
-        
-        # No valid cache - scan databases (slow)
         logging.info("Scanning databases (this may take a few minutes)...")
+        self.current_status = "Scanning databases..."
         grouped = identifier.get_databases_by_type()
         
-        # Save to cache
-        try:
-            cache_data = {
-                'timestamp': datetime.now().isoformat(),
-                'databases': {}
-            }
-            for db_type, dbs in grouped.items():
-                cache_data['databases'][db_type] = [
-                    {
-                        'id': db.id,
-                        'name': db.name,
-                        'engine': db.engine,
-                        'confidence': db.match_confidence,
-                        'matched_tables': db.matched_tables
-                    }
-                    for db in dbs
-                ]
-            
-            with open(cache_file, 'w') as f:
-                json.dump(cache_data, f, indent=2)
-            
-            logging.info(f"Saved database types to cache")
-        except Exception as e:
-            logging.warning(f"Could not save cache: {e}")
+        # Log summary
+        total = sum(len(dbs) for dbs in grouped.values())
+        logging.info(f"Found {total} databases: {len(grouped.get('content', []))} content, "
+                    f"{len(grouped.get('message', []))} message, {len(grouped.get('email', []))} email, "
+                    f"{len(grouped.get('unknown', []))} unknown")
         
         return grouped
     
@@ -353,7 +295,7 @@ class DashboardService:
             
             # Get databases by type - use cached results if available
             self.current_status = "Loading database info..."
-            grouped = self._get_databases_by_type_cached(identifier)
+            grouped = self._get_databases_by_type(identifier)
             
             # Find databases with existing dashboards - ONLY check the 3 _DASHBOARDS collections
             # Also find empty dashboards (decomposed DBs) for cleanup
