@@ -313,29 +313,9 @@ class DashboardService:
         }
     
     def extract_customer_name(self, db_name: str) -> str:
-        """Extract customer name from database name.
-        Preserves version numbers like abc2, abc3 etc."""
-        name = db_name
-        
-        # Suffixes to remove (order matters - check longer ones first)
-        suffixes_to_remove = [
-            '-SDB', '-sdb', 'email', 'Email', 'msg', 'Msg', 
-            'message', 'Message', '-common', '-json', 'hub', 'Hub',
-        ]
-        
-        for suffix in suffixes_to_remove:
-            if name.endswith(suffix):
-                name = name[:-len(suffix)]
-                break  # Only remove one suffix
-        
-        # Clean up trailing dashes/underscores but KEEP version numbers
-        name = name.rstrip('-_')
-        
-        # Capitalize first letter
-        if name:
-            name = name[0].upper() + name[1:]
-        
-        return name or db_name
+        """Use the exact database name as the customer name.
+        No modifications - keeps the name exactly as it is in Metabase."""
+        return db_name
     
     def run_check(self):
         """Run the dashboard check and clone process"""
