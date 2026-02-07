@@ -435,6 +435,79 @@ class DashboardCloner:
         
         return remapped
     
+    def find_filter_linked_questions(self, parameters: list) -> list:
+        """
+        Find all question IDs referenced by dashboard filter dropdowns.
+        
+        Dashboard filters can have values_source_config.card_id that specifies
+        a question to fetch dropdown values from. These "hidden" questions
+        need to be cloned even though they're not visible on the dashboard.
+        
+        Returns a list of question IDs that need to be cloned.
+        """
+        if not parameters:
+            return []
+        
+        question_ids = []
+        for param in parameters:
+            values_source = param.get('values_source_config', {})
+            if values_source and 'card_id' in values_source:
+                card_id = values_source['card_id']
+                if card_id and card_id not in question_ids:
+                    question_ids.append(card_id)
+                    logger.info(f"  Found filter-linked question: {card_id} (for filter '{param.get('name', 'Unknown')}')")
+        
+        return question_ids
+    
+    def clone_filter_linked_questions(self, parameters: list, new_database_id: int, 
+                                       collection_id: int = None) -> dict:
+        """
+        Clone all questions referenced by dashboard filter dropdowns.
+        
+        These are "hidden" questions that provide dropdown values but aren't
+        displayed on any dashboard. They need to be cloned to the new database
+        so the filter dropdowns show values from the correct database.
+        
+        Returns a mapping of old_question_id -> new_question_id
+        """
+        question_ids = self.find_filter_linked_questions(parameters)
+        
+        if not question_ids:
+            return {}
+        
+        logger.info(f"\n--- Cloning {len(question_ids)} filter-linked questions ---")
+        
+        cloned_mapping = {}
+        for question_id in question_ids:
+            if question_id in self.question_mapping:
+                logger.info(f"  Question {question_id} already cloned, skipping")
+                continue
+            
+            # Get the original question to find its name
+            original = self.get_question(question_id)
+            if not original:
+                logger.warning(f"  Could not fetch filter-linked question {question_id}")
+                continue
+            
+            original_name = original.get('name', f'Filter Question {question_id}')
+            
+            # Clone the question
+            cloned = self.clone_question(
+                question_id=question_id,
+                new_name=original_name,
+                new_database_id=new_database_id,
+                collection_id=collection_id
+            )
+            
+            if cloned:
+                cloned_mapping[question_id] = cloned['id']
+                self.question_mapping[question_id] = cloned['id']
+                logger.info(f"  + Cloned filter question: {original_name} ({question_id} -> {cloned['id']})")
+            else:
+                logger.error(f"  x Failed to clone filter question {question_id}")
+        
+        return cloned_mapping
+    
     def clone_question(self, question_id: int, new_name: str, 
                       new_database_id: int, collection_id: int = None,
                       max_retries: int = 3) -> dict:
@@ -972,7 +1045,16 @@ class DashboardCloner:
         # because filter dropdowns may reference questions for their values
         dashboard_params = source.get('parameters', [])
         if dashboard_params:
-            logger.info(f"Found {len(dashboard_params)} dashboard filters - will remap after cloning questions")
+            logger.info(f"Found {len(dashboard_params)} dashboard filters")
+            
+            # IMPORTANT: Clone filter-linked questions FIRST
+            # These are "hidden" questions that provide dropdown values but aren't on the dashboard
+            # They need to be cloned before we can remap the filter parameters
+            self.clone_filter_linked_questions(
+                parameters=dashboard_params,
+                new_database_id=new_database_id,
+                collection_id=questions_collection_id
+            )
         
         # Prepare tabs for later - will be created together with dashcards
         tab_mapping = {}  # old_tab_id -> new_tab_id  
