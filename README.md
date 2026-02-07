@@ -1,10 +1,10 @@
 # Metabase Dashboard Auto-Clone Service
 
-A 24/7 service that automatically creates dashboards for new databases. Runs every hour and provides a beautiful web UI with countdown timer and activity logs.
+A 24/7 service that automatically creates dashboards for new databases. Runs every 4 hours and provides a beautiful web UI with countdown timer and activity logs.
 
 ## Features
 
-- **24/7 Service** - Runs continuously, checking every hour at :00
+- **24/7 Service** - Runs continuously, checking every 4 hours (00:00, 04:00, 08:00, 12:00, 16:00, 20:00)
 - **Auto-detect database types** (content/message/email) by scanning tables
 - **Auto-detect missing dashboards** - only clones for databases without dashboards
 - **Full drillthrough support** - clones linked dashboards with working click behaviors

@@ -1,6 +1,6 @@
 """
 Dashboard Auto-Clone Service
-Runs 24/7, checks every hour for databases needing dashboards and creates them.
+Runs 24/7, checks every 4 hours for databases needing dashboards and creates them.
 Provides a web UI with countdown timer and activity logs.
 """
 
