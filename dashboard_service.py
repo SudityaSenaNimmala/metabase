@@ -569,7 +569,7 @@ class DashboardService:
                         
                         # Log the deletion
                         entry = ActivityLogEntry(
-                            timestamp=datetime.now().isoformat(),
+                            timestamp=datetime.utcnow().isoformat() + 'Z',
                             database_name="(decomposed)",
                             database_id=0,
                             db_type=db_type,
@@ -694,7 +694,7 @@ class DashboardService:
                 # Log result
                 if new_dashboard:
                     entry = ActivityLogEntry(
-                        timestamp=datetime.now().isoformat(),
+                        timestamp=datetime.utcnow().isoformat() + 'Z',
                         database_name=db.name,
                         database_id=db.id,
                         db_type=task["db_type"],
@@ -707,7 +707,7 @@ class DashboardService:
                     logging.info(f"SUCCESS: Created {dashboard_name} (ID: {new_dashboard['id']})")
                 else:
                     entry = ActivityLogEntry(
-                        timestamp=datetime.now().isoformat(),
+                        timestamp=datetime.utcnow().isoformat() + 'Z',
                         database_name=db.name,
                         database_id=db.id,
                         db_type=task["db_type"],
@@ -894,6 +894,31 @@ def get_status():
     """Get current service status"""
     update_next_run()
     return jsonify(service.get_status())
+
+
+@app.route('/api/test-log')
+def test_log():
+    """Test endpoint to verify MongoDB logging works"""
+    from datetime import datetime
+    
+    test_entry = ActivityLogEntry(
+        timestamp=datetime.utcnow().isoformat() + 'Z',
+        database_name="TEST_DATABASE",
+        database_id=99999,
+        db_type="content",
+        dashboard_name="TEST Dashboard - Delete Me",
+        dashboard_id=99999,
+        dashboard_url="https://test.com",
+        status="success"
+    )
+    
+    success = service.activity_log.add_entry(test_entry)
+    
+    return jsonify({
+        "success": success,
+        "mongodb_connected": mongo_storage.is_connected(),
+        "entry": asdict(test_entry)
+    })
 
 
 @app.route('/api/logs')
