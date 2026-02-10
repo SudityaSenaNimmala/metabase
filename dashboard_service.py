@@ -192,7 +192,7 @@ class MongoDBStorage:
             logging.error(f"Failed to add activity log: {e}")
             return False
     
-    def get_activity_logs(self, limit: int = 100) -> List[dict]:
+    def get_activity_logs(self, limit: int = 500) -> List[dict]:
         """Get activity log entries"""
         if not self.connected:
             return []
@@ -204,6 +204,20 @@ class MongoDBStorage:
                 doc.pop('_id', None)
                 entries.append(doc)
             return entries
+        except Exception as e:
+            logging.error(f"Failed to get activity logs: {e}")
+            return []
+    
+    def get_activity_log_count(self) -> int:
+        """Get total count of activity log entries"""
+        if not self.connected:
+            return 0
+        
+        try:
+            return self.db['activity_log'].count_documents({})
+        except Exception as e:
+            logging.error(f"Failed to count activity logs: {e}")
+            return 0
         except Exception as e:
             logging.error(f"Failed to get activity logs: {e}")
             return []
@@ -309,9 +323,13 @@ class ActivityLog:
         self.storage.add_activity_log(asdict(entry))
         logging.debug(f"Saved entry to MongoDB: {entry.dashboard_name}")
     
-    def get_entries(self, limit: int = 100) -> List[dict]:
+    def get_entries(self, limit: int = 500) -> List[dict]:
         """Get log entries as dictionaries"""
         return self.storage.get_activity_logs(limit)
+    
+    def get_total_count(self) -> int:
+        """Get total count of log entries"""
+        return self.storage.get_activity_log_count()
     
     def get_stats(self) -> dict:
         """Get statistics from the log"""
@@ -865,11 +883,96 @@ def get_status():
 @app.route('/api/logs')
 def get_logs():
     """Get activity logs"""
-    limit = request.args.get('limit', 100, type=int)
+    limit = request.args.get('limit', 500, type=int)
+    entries = service.activity_log.get_entries(limit)
+    total_count = service.activity_log.get_total_count()
     return jsonify({
-        "entries": service.activity_log.get_entries(limit),
-        "stats": service.activity_log.get_stats()
+        "entries": entries,
+        "stats": service.activity_log.get_stats(),
+        "total_count": total_count,
+        "showing": len(entries)
     })
+
+
+@app.route('/api/dashboard-counts')
+def get_dashboard_counts():
+    """Get actual dashboard counts from _DASHBOARDS collections in Metabase"""
+    try:
+        if not service.metabase_config:
+            return jsonify({"error": "Metabase not configured"}), 400
+        
+        import requests
+        base_url = service.metabase_config['base_url'].rstrip('/')
+        
+        # Authenticate
+        auth_response = requests.post(
+            f"{base_url}/api/session",
+            json={
+                "username": service.metabase_config['username'],
+                "password": service.metabase_config['password']
+            },
+            timeout=10
+        )
+        if auth_response.status_code != 200:
+            return jsonify({"error": "Authentication failed"}), 500
+        
+        headers = {"X-Metabase-Session": auth_response.json()["id"]}
+        
+        # Get all collections
+        collections_response = requests.get(f"{base_url}/api/collection", headers=headers, timeout=10)
+        if collections_response.status_code != 200:
+            return jsonify({"error": "Failed to get collections"}), 500
+        
+        collections = collections_response.json()
+        
+        # Find _DASHBOARDS collections
+        dashboard_collections = {
+            'content': None,
+            'message': None,
+            'email': None
+        }
+        
+        for col in collections:
+            name = col.get('name', '').lower()
+            if 'content_dashboards' in name or name == 'content_dashboards':
+                dashboard_collections['content'] = col['id']
+            elif 'message_dashboards' in name or name == 'message_dashboards':
+                dashboard_collections['message'] = col['id']
+            elif 'email_dashboards' in name or name == 'email_dashboards':
+                dashboard_collections['email'] = col['id']
+        
+        # Count dashboards in each collection
+        counts = {
+            'content': 0,
+            'message': 0,
+            'email': 0,
+            'total': 0
+        }
+        
+        for db_type, col_id in dashboard_collections.items():
+            if col_id:
+                try:
+                    items_response = requests.get(
+                        f"{base_url}/api/collection/{col_id}/items",
+                        headers=headers,
+                        params={"models": "dashboard"},
+                        timeout=10
+                    )
+                    if items_response.status_code == 200:
+                        items = items_response.json()
+                        # Count only dashboards
+                        dashboard_count = len([item for item in items.get('data', []) if item.get('model') == 'dashboard'])
+                        counts[db_type] = dashboard_count
+                except Exception as e:
+                    logging.error(f"Failed to get items for {db_type}: {e}")
+        
+        counts['total'] = counts['content'] + counts['message'] + counts['email']
+        
+        return jsonify(counts)
+        
+    except Exception as e:
+        logging.error(f"Failed to get dashboard counts: {e}")
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route('/api/config')

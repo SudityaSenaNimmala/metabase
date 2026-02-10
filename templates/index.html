@@ -520,13 +520,25 @@
         /* Log Filters */
         .log-filters {
             display: flex;
-            justify-content: space-between;
-            align-items: center;
+            flex-direction: column;
             padding: 1rem 2rem;
             border-bottom: 1px solid var(--border-color);
             background: var(--bg-secondary);
-            flex-wrap: wrap;
+            gap: 0.75rem;
+        }
+
+        .filter-group {
+            display: flex;
+            align-items: center;
             gap: 1rem;
+            flex-wrap: wrap;
+        }
+
+        .filter-label {
+            color: var(--text-muted);
+            font-size: 0.8rem;
+            min-width: 100px;
+            font-weight: 500;
         }
 
         .filter-buttons {
@@ -536,13 +548,13 @@
         }
 
         .filter-btn {
-            padding: 0.5rem 1rem;
+            padding: 0.4rem 0.8rem;
             border: 1px solid var(--border-color);
-            border-radius: 8px;
+            border-radius: 6px;
             background: var(--bg-primary);
             color: var(--text-secondary);
             font-family: 'Inter', sans-serif;
-            font-size: 0.85rem;
+            font-size: 0.8rem;
             cursor: pointer;
             transition: all 0.2s ease;
         }
@@ -558,25 +570,52 @@
             color: white;
         }
 
+        /* Type-specific active colors */
+        .filter-btn.type-content.active {
+            background: var(--accent-green);
+            border-color: var(--accent-green);
+        }
+
+        .filter-btn.type-message.active {
+            background: var(--accent-purple);
+            border-color: var(--accent-purple);
+        }
+
+        .filter-btn.type-email.active {
+            background: var(--accent-cyan);
+            border-color: var(--accent-cyan);
+        }
+
+        /* Status-specific active colors */
+        .filter-btn.status-success.active {
+            background: var(--accent-green);
+            border-color: var(--accent-green);
+        }
+
+        .filter-btn.status-failed.active {
+            background: #ef4444;
+            border-color: #ef4444;
+        }
+
+        .filter-btn.status-deleted.active {
+            background: #f59e0b;
+            border-color: #f59e0b;
+        }
+
         .date-picker-container {
             display: flex;
             align-items: center;
             gap: 0.75rem;
         }
 
-        .date-picker-container label {
-            color: var(--text-muted);
-            font-size: 0.85rem;
-        }
-
         .date-picker-container input[type="date"] {
-            padding: 0.5rem 0.75rem;
+            padding: 0.4rem 0.75rem;
             border: 1px solid var(--border-color);
-            border-radius: 8px;
+            border-radius: 6px;
             background: var(--bg-primary);
             color: var(--text-primary);
             font-family: 'JetBrains Mono', monospace;
-            font-size: 0.85rem;
+            font-size: 0.8rem;
             cursor: pointer;
         }
 
@@ -951,19 +990,19 @@
         <!-- Stats Grid -->
         <section class="stats-grid">
             <div class="stat-card">
-                <div class="stat-value total" id="stat-total">0</div>
-                <div class="stat-label">Total Created</div>
+                <div class="stat-value total" id="stat-total">-</div>
+                <div class="stat-label">Total Dashboards</div>
             </div>
             <div class="stat-card">
-                <div class="stat-value content" id="stat-content">0</div>
+                <div class="stat-value content" id="stat-content">-</div>
                 <div class="stat-label">Content</div>
             </div>
             <div class="stat-card">
-                <div class="stat-value message" id="stat-message">0</div>
+                <div class="stat-value message" id="stat-message">-</div>
                 <div class="stat-label">Message</div>
             </div>
             <div class="stat-card">
-                <div class="stat-value email" id="stat-email">0</div>
+                <div class="stat-value email" id="stat-email">-</div>
                 <div class="stat-label">Email</div>
             </div>
         </section>
@@ -993,19 +1032,50 @@
                 <span class="log-count" id="log-count">0 entries</span>
             </div>
             
-            <!-- Date Filter -->
+            <!-- Enhanced Filters -->
             <div class="log-filters">
-                <div class="filter-buttons">
-                    <button class="filter-btn active" data-filter="all" onclick="setFilter('all')">All</button>
-                    <button class="filter-btn" data-filter="today" onclick="setFilter('today')">Today</button>
-                    <button class="filter-btn" data-filter="7days" onclick="setFilter('7days')">Last 7 Days</button>
-                    <button class="filter-btn" data-filter="month" onclick="setFilter('month')">This Month</button>
-                    <button class="filter-btn" data-filter="year" onclick="setFilter('year')">This Year</button>
+                <!-- Time Period Filter -->
+                <div class="filter-group">
+                    <label class="filter-label">Time Period:</label>
+                    <div class="filter-buttons">
+                        <button class="filter-btn active" data-filter="time" data-value="all" onclick="setTimeFilter('all')">All</button>
+                        <button class="filter-btn" data-filter="time" data-value="1hour" onclick="setTimeFilter('1hour')">Last Hour</button>
+                        <button class="filter-btn" data-filter="time" data-value="today" onclick="setTimeFilter('today')">Today</button>
+                        <button class="filter-btn" data-filter="time" data-value="7days" onclick="setTimeFilter('7days')">Last 7 Days</button>
+                        <button class="filter-btn" data-filter="time" data-value="month" onclick="setTimeFilter('month')">This Month</button>
+                        <button class="filter-btn" data-filter="time" data-value="year" onclick="setTimeFilter('year')">This Year</button>
+                    </div>
                 </div>
-                <div class="date-picker-container">
-                    <label for="date-picker">Select Date:</label>
-                    <input type="date" id="date-picker" onchange="filterByDate(this.value)">
-                    <button class="filter-btn clear-btn" onclick="clearDateFilter()">Clear</button>
+                
+                <!-- Dashboard Type Filter (multi-select) -->
+                <div class="filter-group">
+                    <label class="filter-label">Dashboard Type:</label>
+                    <div class="filter-buttons">
+                        <button class="filter-btn active" data-filter="type" data-value="all" onclick="toggleTypeFilter('all')">All Types</button>
+                        <button class="filter-btn type-content" data-filter="type" data-value="content" onclick="toggleTypeFilter('content')">Content</button>
+                        <button class="filter-btn type-message" data-filter="type" data-value="message" onclick="toggleTypeFilter('message')">Message</button>
+                        <button class="filter-btn type-email" data-filter="type" data-value="email" onclick="toggleTypeFilter('email')">Email</button>
+                    </div>
+                </div>
+                
+                <!-- Status Filter (multi-select) -->
+                <div class="filter-group">
+                    <label class="filter-label">Status:</label>
+                    <div class="filter-buttons">
+                        <button class="filter-btn active" data-filter="status" data-value="all" onclick="toggleStatusFilter('all')">All Status</button>
+                        <button class="filter-btn status-success" data-filter="status" data-value="success" onclick="toggleStatusFilter('success')">Success</button>
+                        <button class="filter-btn status-failed" data-filter="status" data-value="failed" onclick="toggleStatusFilter('failed')">Failed</button>
+                        <button class="filter-btn status-deleted" data-filter="status" data-value="deleted" onclick="toggleStatusFilter('deleted')">Deleted</button>
+                    </div>
+                </div>
+                
+                <!-- Date Picker -->
+                <div class="filter-group">
+                    <label class="filter-label">Specific Date:</label>
+                    <div class="date-picker-container">
+                        <input type="date" id="date-picker" onchange="filterByDate(this.value)">
+                        <button class="filter-btn clear-btn" onclick="clearAllFilters()">Clear All</button>
+                    </div>
                 </div>
             </div>
             
@@ -1025,8 +1095,14 @@
         let countdownInterval;
         let secondsRemaining = 0;
         let allLogEntries = [];  // Store all entries for filtering
-        let currentFilter = 'all';
         let selectedDate = null;
+        
+        // Multi-select filter state
+        let filters = {
+            time: 'all',           // Single select: all, 1hour, today, 7days, month, year
+            types: new Set(),      // Multi-select: content, message, email
+            statuses: new Set()    // Multi-select: success, failed, deleted
+        };
 
         // Format seconds to HH:MM:SS
         function formatTime(seconds) {
@@ -1051,62 +1127,126 @@
             return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
         }
 
-        // Filter entries by date range
+        // Filter entries by all criteria
         function filterEntries(entries) {
+            return entries.filter(entry => {
+                // Time filter
+                if (!passesTimeFilter(entry)) return false;
+                
+                // Type filter (multi-select)
+                if (filters.types.size > 0 && !filters.types.has(entry.db_type)) return false;
+                
+                // Status filter (multi-select)
+                if (filters.statuses.size > 0 && !filters.statuses.has(entry.status)) return false;
+                
+                return true;
+            });
+        }
+
+        // Check if entry passes time filter
+        function passesTimeFilter(entry) {
             if (selectedDate) {
-                // Filter by specific date
-                return entries.filter(entry => {
-                    const entryDate = new Date(entry.timestamp).toISOString().split('T')[0];
-                    return entryDate === selectedDate;
-                });
+                const entryDate = new Date(entry.timestamp).toISOString().split('T')[0];
+                return entryDate === selectedDate;
             }
             
             const now = new Date();
+            const entryDate = new Date(entry.timestamp);
             const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
             
-            switch (currentFilter) {
+            switch (filters.time) {
+                case '1hour':
+                    const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
+                    return entryDate >= oneHourAgo;
                 case 'today':
-                    return entries.filter(entry => {
-                        const entryDate = new Date(entry.timestamp);
-                        return entryDate >= today;
-                    });
+                    return entryDate >= today;
                 case '7days':
                     const sevenDaysAgo = new Date(today);
                     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-                    return entries.filter(entry => {
-                        const entryDate = new Date(entry.timestamp);
-                        return entryDate >= sevenDaysAgo;
-                    });
+                    return entryDate >= sevenDaysAgo;
                 case 'month':
                     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-                    return entries.filter(entry => {
-                        const entryDate = new Date(entry.timestamp);
-                        return entryDate >= startOfMonth;
-                    });
+                    return entryDate >= startOfMonth;
                 case 'year':
                     const startOfYear = new Date(now.getFullYear(), 0, 1);
-                    return entries.filter(entry => {
-                        const entryDate = new Date(entry.timestamp);
-                        return entryDate >= startOfYear;
-                    });
+                    return entryDate >= startOfYear;
                 default:
-                    return entries;
+                    return true;
             }
         }
 
-        // Set filter and update UI
-        function setFilter(filter) {
-            currentFilter = filter;
+        // Set time filter (single select)
+        function setTimeFilter(value) {
+            filters.time = value;
             selectedDate = null;
             document.getElementById('date-picker').value = '';
             
-            // Update active button
-            document.querySelectorAll('.filter-btn[data-filter]').forEach(btn => {
-                btn.classList.remove('active');
-                if (btn.dataset.filter === filter) {
-                    btn.classList.add('active');
-                }
+            // Update active button for time filter
+            document.querySelectorAll('.filter-btn[data-filter="time"]').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.value === value);
             });
+            
+            renderLogs();
+        }
+
+        // Toggle type filter (multi-select)
+        function toggleTypeFilter(value) {
+            if (value === 'all') {
+                filters.types.clear();
+                document.querySelectorAll('.filter-btn[data-filter="type"]').forEach(btn => {
+                    btn.classList.toggle('active', btn.dataset.value === 'all');
+                });
+            } else {
+                // Remove 'all' active state
+                document.querySelector('.filter-btn[data-filter="type"][data-value="all"]').classList.remove('active');
+                
+                // Toggle the specific type
+                if (filters.types.has(value)) {
+                    filters.types.delete(value);
+                } else {
+                    filters.types.add(value);
+                }
+                
+                // Update button state
+                document.querySelectorAll('.filter-btn[data-filter="type"]').forEach(btn => {
+                    if (btn.dataset.value === 'all') {
+                        btn.classList.toggle('active', filters.types.size === 0);
+                    } else {
+                        btn.classList.toggle('active', filters.types.has(btn.dataset.value));
+                    }
+                });
+            }
+            
+            renderLogs();
+        }
+
+        // Toggle status filter (multi-select)
+        function toggleStatusFilter(value) {
+            if (value === 'all') {
+                filters.statuses.clear();
+                document.querySelectorAll('.filter-btn[data-filter="status"]').forEach(btn => {
+                    btn.classList.toggle('active', btn.dataset.value === 'all');
+                });
+            } else {
+                // Remove 'all' active state
+                document.querySelector('.filter-btn[data-filter="status"][data-value="all"]').classList.remove('active');
+                
+                // Toggle the specific status
+                if (filters.statuses.has(value)) {
+                    filters.statuses.delete(value);
+                } else {
+                    filters.statuses.add(value);
+                }
+                
+                // Update button state
+                document.querySelectorAll('.filter-btn[data-filter="status"]').forEach(btn => {
+                    if (btn.dataset.value === 'all') {
+                        btn.classList.toggle('active', filters.statuses.size === 0);
+                    } else {
+                        btn.classList.toggle('active', filters.statuses.has(btn.dataset.value));
+                    }
+                });
+            }
             
             renderLogs();
         }
@@ -1115,10 +1255,9 @@
         function filterByDate(dateValue) {
             if (dateValue) {
                 selectedDate = dateValue;
-                currentFilter = 'custom';
                 
-                // Remove active from all filter buttons
-                document.querySelectorAll('.filter-btn[data-filter]').forEach(btn => {
+                // Remove active from time filter buttons
+                document.querySelectorAll('.filter-btn[data-filter="time"]').forEach(btn => {
                     btn.classList.remove('active');
                 });
                 
@@ -1126,11 +1265,26 @@
             }
         }
 
-        // Clear date filter
-        function clearDateFilter() {
+        // Clear all filters
+        function clearAllFilters() {
             selectedDate = null;
             document.getElementById('date-picker').value = '';
-            setFilter('all');
+            filters.time = 'all';
+            filters.types.clear();
+            filters.statuses.clear();
+            
+            // Reset all filter buttons
+            document.querySelectorAll('.filter-btn[data-filter="time"]').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.value === 'all');
+            });
+            document.querySelectorAll('.filter-btn[data-filter="type"]').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.value === 'all');
+            });
+            document.querySelectorAll('.filter-btn[data-filter="status"]').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.value === 'all');
+            });
+            
+            renderLogs();
         }
 
         // Render logs with current filter
@@ -1138,7 +1292,7 @@
             const logList = document.getElementById('log-list');
             const filteredEntries = filterEntries(allLogEntries);
             
-            document.getElementById('log-count').textContent = `${filteredEntries.length} of ${allLogEntries.length} entries`;
+            document.getElementById('log-count').textContent = `${filteredEntries.length} of ${totalLogCount} entries`;
             
             if (filteredEntries.length === 0) {
                 logList.innerHTML = `
@@ -1241,20 +1395,35 @@
             }
         }
 
+        // Fetch dashboard counts from _DASHBOARDS collections
+        async function fetchDashboardCounts() {
+            try {
+                const response = await fetch('/api/dashboard-counts');
+                const data = await response.json();
+                
+                if (!data.error) {
+                    // Update stats cards with actual dashboard counts
+                    document.getElementById('stat-total').textContent = data.total;
+                    document.getElementById('stat-content').textContent = data.content;
+                    document.getElementById('stat-message').textContent = data.message;
+                    document.getElementById('stat-email').textContent = data.email;
+                }
+            } catch (error) {
+                console.error('Failed to fetch dashboard counts:', error);
+            }
+        }
+        
         // Fetch logs
+        let totalLogCount = 0;  // Track total count from server
+        
         async function fetchLogs() {
             try {
                 const response = await fetch('/api/logs');
                 const data = await response.json();
                 
-                // Update stats
-                document.getElementById('stat-total').textContent = data.stats.success;
-                document.getElementById('stat-content').textContent = data.stats.by_type.content;
-                document.getElementById('stat-message').textContent = data.stats.by_type.message;
-                document.getElementById('stat-email').textContent = data.stats.by_type.email;
-                
                 // Store all entries for filtering
                 allLogEntries = data.entries;
+                totalLogCount = data.total_count || data.entries.length;
                 
                 // Render with current filter
                 renderLogs();
@@ -1351,6 +1520,7 @@
             fetchStatus();
             fetchLogs();
             fetchConfig();
+            fetchDashboardCounts();
             checkMongoDBStatus();
         }
 
