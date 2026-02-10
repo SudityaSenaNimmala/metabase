@@ -1273,7 +1273,14 @@
         // Render logs with current filter
         function renderLogs() {
             const logList = document.getElementById('log-list');
-            const filteredEntries = filterEntries(allLogEntries);
+            let filteredEntries = filterEntries(allLogEntries);
+            
+            // Sort by timestamp descending (newest first) - handle both Z and non-Z formats
+            filteredEntries.sort((a, b) => {
+                const dateA = new Date(a.timestamp);
+                const dateB = new Date(b.timestamp);
+                return dateB - dateA;
+            });
             
             document.getElementById('log-count').textContent = `${filteredEntries.length} of ${totalLogCount} entries`;
             

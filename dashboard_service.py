@@ -212,12 +212,21 @@ class MongoDBStorage:
             return []
         
         try:
-            cursor = self.db['activity_log'].find().sort('timestamp', -1).limit(limit)
+            # Fetch entries
+            cursor = self.db['activity_log'].find().limit(limit * 2)
             entries = []
             for doc in cursor:
                 doc.pop('_id', None)
                 entries.append(doc)
-            return entries
+            
+            # Sort by timestamp properly (normalize Z suffix for consistent sorting)
+            def normalize_timestamp(ts):
+                # Remove Z suffix for consistent string sorting
+                return ts.rstrip('Z') if ts else ''
+            
+            entries.sort(key=lambda x: normalize_timestamp(x.get('timestamp', '')), reverse=True)
+            
+            return entries[:limit]
         except Exception as e:
             logging.error(f"Failed to get activity logs: {e}")
             return []
