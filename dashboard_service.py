@@ -944,6 +944,82 @@ def get_logs():
     })
 
 
+@app.route('/api/dashboards/<db_type>')
+def get_dashboards_list(db_type):
+    """Get list of dashboards in a _DASHBOARDS collection"""
+    if db_type not in ['content', 'message', 'email']:
+        return jsonify({"error": "Invalid type. Use: content, message, or email"}), 400
+    
+    try:
+        if not service.metabase_config:
+            return jsonify({"error": "Metabase not configured", "dashboards": []})
+        
+        # Get collection ID from MongoDB config
+        auto_config = mongo_storage.get_auto_clone_config()
+        dashboards_collections = auto_config.get('dashboards_collections', {})
+        col_id = dashboards_collections.get(db_type)
+        
+        if not col_id:
+            return jsonify({"error": f"No collection configured for {db_type}", "dashboards": []})
+        
+        import requests
+        base_url = service.metabase_config['base_url'].rstrip('/')
+        
+        # Authenticate
+        auth_response = requests.post(
+            f"{base_url}/api/session",
+            json={
+                "username": service.metabase_config['username'],
+                "password": service.metabase_config['password']
+            },
+            timeout=10
+        )
+        if auth_response.status_code != 200:
+            return jsonify({"error": "Authentication failed", "dashboards": []})
+        
+        headers = {"X-Metabase-Session": auth_response.json()["id"]}
+        
+        # Get dashboards in collection
+        items_response = requests.get(
+            f"{base_url}/api/collection/{col_id}/items",
+            headers=headers,
+            timeout=30
+        )
+        
+        if items_response.status_code != 200:
+            return jsonify({"error": "Failed to fetch dashboards", "dashboards": []})
+        
+        items = items_response.json()
+        
+        # Extract dashboard info
+        dashboards = []
+        data = items if isinstance(items, list) else items.get('data', [])
+        
+        for item in data:
+            if item.get('model') == 'dashboard':
+                dashboards.append({
+                    'id': item.get('id'),
+                    'name': item.get('name'),
+                    'description': item.get('description', ''),
+                    'url': f"{base_url}/dashboard/{item.get('id')}"
+                })
+        
+        # Sort by name
+        dashboards.sort(key=lambda x: x.get('name', '').lower())
+        
+        return jsonify({
+            "type": db_type,
+            "collection_id": col_id,
+            "count": len(dashboards),
+            "dashboards": dashboards,
+            "metabase_url": base_url
+        })
+        
+    except Exception as e:
+        logging.error(f"Failed to get dashboards list: {e}")
+        return jsonify({"error": str(e), "dashboards": []})
+
+
 @app.route('/api/dashboard-counts')
 def get_dashboard_counts():
     """Get dashboard counts from _DASHBOARDS collections using IDs from MongoDB config"""

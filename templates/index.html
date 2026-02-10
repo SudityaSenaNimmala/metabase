@@ -297,11 +297,30 @@
             padding: 1.5rem;
             text-align: center;
             transition: all 0.2s ease;
+            cursor: pointer;
+            position: relative;
         }
 
         .stat-card:hover {
             border-color: var(--accent-blue);
             transform: translateY(-2px);
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+        }
+
+        .stat-card::after {
+            content: 'Click to view →';
+            position: absolute;
+            bottom: 0.5rem;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 0.65rem;
+            color: var(--text-muted);
+            opacity: 0;
+            transition: opacity 0.2s;
+        }
+
+        .stat-card:hover::after {
+            opacity: 1;
         }
 
         .stat-value {
@@ -628,6 +647,254 @@
         .clear-btn {
             padding: 0.5rem 0.75rem;
             font-size: 0.8rem;
+        }
+
+        /* Dashboards Modal Styles (Full Screen) */
+        .dashboards-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: var(--bg-primary);
+            z-index: 1001;
+            animation: fadeIn 0.2s ease;
+        }
+
+        .dashboards-modal.active {
+            display: flex;
+            flex-direction: column;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        .dashboards-modal-content {
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+            animation: slideUp 0.3s ease;
+        }
+
+        @keyframes slideUp {
+            from { transform: translateY(20px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+
+        .dashboards-modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1.5rem 2rem;
+            border-bottom: 1px solid var(--border-color);
+            background: var(--bg-card);
+        }
+
+        .dashboards-modal-header-left {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .dashboards-modal-header h2 {
+            margin: 0;
+            font-size: 1.5rem;
+            color: var(--text-primary);
+        }
+
+        .dashboards-count {
+            background: var(--bg-secondary);
+            padding: 0.35rem 0.75rem;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            color: var(--text-muted);
+        }
+
+        .dashboards-modal-close {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            font-size: 1rem;
+            color: var(--text-primary);
+            cursor: pointer;
+            padding: 0.5rem 1rem;
+            border-radius: 8px;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .dashboards-modal-close:hover {
+            background: var(--accent-red);
+            border-color: var(--accent-red);
+            color: white;
+        }
+
+        .dashboards-modal-search {
+            padding: 1rem 2rem;
+            background: var(--bg-card);
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .dashboards-modal-search input {
+            width: 100%;
+            padding: 0.75rem 1rem;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            color: var(--text-primary);
+            font-size: 1rem;
+        }
+
+        .dashboards-modal-search input:focus {
+            outline: none;
+            border-color: var(--accent-blue);
+        }
+
+        .dashboards-modal-search input::placeholder {
+            color: var(--text-muted);
+        }
+
+        .dashboards-modal-body {
+            padding: 1.5rem 2rem;
+            overflow-y: auto;
+            flex: 1;
+            background: var(--bg-primary);
+        }
+
+        /* Dashboard Cards Grid */
+        #dashboards-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 1rem;
+        }
+
+        .dashboard-card {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 1.25rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .dashboard-card:hover {
+            transform: translateY(-2px);
+            border-color: var(--accent-blue);
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+        }
+
+        .dashboard-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 4px;
+            height: 100%;
+            background: var(--accent-blue);
+            opacity: 0;
+            transition: opacity 0.2s;
+        }
+
+        .dashboard-card:hover::before {
+            opacity: 1;
+        }
+
+        .dashboard-card.type-content::before { background: var(--accent-green); }
+        .dashboard-card.type-message::before { background: var(--accent-purple); }
+        .dashboard-card.type-email::before { background: var(--accent-orange); }
+
+        .dashboard-card-name {
+            font-size: 1rem;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 0.5rem;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+
+        .dashboard-card-desc {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+            margin-bottom: 0.75rem;
+            min-height: 2.4em;
+        }
+
+        .dashboard-card-footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .dashboard-card-id {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.7rem;
+            color: var(--text-muted);
+            background: var(--bg-card);
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+        }
+
+        .dashboard-card-type {
+            font-size: 0.7rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+        }
+
+        .dashboard-card-type.content {
+            background: rgba(16, 185, 129, 0.2);
+            color: var(--accent-green);
+        }
+
+        .dashboard-card-type.message {
+            background: rgba(139, 92, 246, 0.2);
+            color: var(--accent-purple);
+        }
+
+        .dashboard-card-type.email {
+            background: rgba(245, 158, 11, 0.2);
+            color: var(--accent-orange);
+        }
+
+        .dashboard-card-icon {
+            position: absolute;
+            top: 1rem;
+            right: 1rem;
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            opacity: 0;
+            transition: opacity 0.2s;
+        }
+
+        .dashboard-card:hover .dashboard-card-icon {
+            opacity: 1;
+        }
+
+        .loading-spinner {
+            text-align: center;
+            padding: 3rem;
+            color: var(--text-muted);
+            grid-column: 1 / -1;
+        }
+
+        .no-results {
+            text-align: center;
+            padding: 3rem;
+            color: var(--text-muted);
+            grid-column: 1 / -1;
         }
 
         /* Config Section */
@@ -985,23 +1252,49 @@
 
         <!-- Stats Grid -->
         <section class="stats-grid">
-            <div class="stat-card">
+            <div class="stat-card" onclick="openDashboardsModal('all')" style="cursor: pointer;" title="Click to view all dashboards">
                 <div class="stat-value total" id="stat-total">-</div>
                 <div class="stat-label">Total Dashboards</div>
             </div>
-            <div class="stat-card">
+            <div class="stat-card" onclick="openDashboardsModal('content')" style="cursor: pointer;" title="Click to view Content dashboards">
                 <div class="stat-value content" id="stat-content">-</div>
                 <div class="stat-label">Content</div>
             </div>
-            <div class="stat-card">
+            <div class="stat-card" onclick="openDashboardsModal('message')" style="cursor: pointer;" title="Click to view Message dashboards">
                 <div class="stat-value message" id="stat-message">-</div>
                 <div class="stat-label">Message</div>
             </div>
-            <div class="stat-card">
+            <div class="stat-card" onclick="openDashboardsModal('email')" style="cursor: pointer;" title="Click to view Email dashboards">
                 <div class="stat-value email" id="stat-email">-</div>
                 <div class="stat-label">Email</div>
             </div>
         </section>
+
+        <!-- Dashboards Modal (Full Screen) -->
+        <div id="dashboards-modal" class="dashboards-modal">
+            <div class="dashboards-modal-content">
+                <div class="dashboards-modal-header">
+                    <div class="dashboards-modal-header-left">
+                        <h2 id="modal-title">Dashboards</h2>
+                        <span class="dashboards-count" id="dashboards-count">0 dashboards</span>
+                    </div>
+                    <button class="dashboards-modal-close" onclick="closeDashboardsModal()">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M19 12H5M12 19l-7-7 7-7"/>
+                        </svg>
+                        Back to Dashboard
+                    </button>
+                </div>
+                <div class="dashboards-modal-search">
+                    <input type="text" id="dashboard-search" placeholder="Search dashboards by name, description, or ID..." oninput="filterDashboardCards()">
+                </div>
+                <div class="dashboards-modal-body">
+                    <div id="dashboards-grid">
+                        <div class="loading-spinner">Loading dashboards...</div>
+                    </div>
+                </div>
+            </div>
+        </div>
 
         <!-- Config Section -->
         <section class="config-section">
@@ -1269,6 +1562,152 @@
             
             renderLogs();
         }
+
+        // ========== DASHBOARD MODAL FUNCTIONS ==========
+        let allDashboardsData = { content: [], message: [], email: [] };
+        let currentModalType = 'all';
+
+        // Open dashboards modal
+        async function openDashboardsModal(type) {
+            currentModalType = type;
+            const modal = document.getElementById('dashboards-modal');
+            const grid = document.getElementById('dashboards-grid');
+            const title = document.getElementById('modal-title');
+            const searchInput = document.getElementById('dashboard-search');
+            
+            // Set title based on type
+            const titles = {
+                'all': 'All Dashboards',
+                'content': 'Content Dashboards',
+                'message': 'Message Dashboards',
+                'email': 'Email Dashboards'
+            };
+            title.textContent = titles[type] || 'Dashboards';
+            
+            // Show modal with loading state
+            modal.classList.add('active');
+            grid.innerHTML = '<div class="loading-spinner">Loading dashboards...</div>';
+            searchInput.value = '';
+            
+            // Prevent body scroll
+            document.body.style.overflow = 'hidden';
+            
+            try {
+                if (type === 'all') {
+                    // Fetch all types in parallel
+                    const [contentRes, messageRes, emailRes] = await Promise.all([
+                        fetch('/api/dashboards/content'),
+                        fetch('/api/dashboards/message'),
+                        fetch('/api/dashboards/email')
+                    ]);
+                    
+                    const contentData = await contentRes.json();
+                    const messageData = await messageRes.json();
+                    const emailData = await emailRes.json();
+                    
+                    allDashboardsData.content = (contentData.dashboards || []).map(d => ({...d, type: 'content'}));
+                    allDashboardsData.message = (messageData.dashboards || []).map(d => ({...d, type: 'message'}));
+                    allDashboardsData.email = (emailData.dashboards || []).map(d => ({...d, type: 'email'}));
+                    
+                    renderDashboardCards([...allDashboardsData.content, ...allDashboardsData.message, ...allDashboardsData.email]);
+                } else {
+                    const response = await fetch(`/api/dashboards/${type}`);
+                    const data = await response.json();
+                    
+                    if (data.error) {
+                        grid.innerHTML = `<div class="no-results">Error: ${data.error}</div>`;
+                        return;
+                    }
+                    
+                    allDashboardsData[type] = (data.dashboards || []).map(d => ({...d, type: type}));
+                    renderDashboardCards(allDashboardsData[type]);
+                }
+            } catch (error) {
+                grid.innerHTML = `<div class="no-results">Failed to load dashboards: ${error.message}</div>`;
+            }
+        }
+
+        // Close dashboards modal
+        function closeDashboardsModal() {
+            const modal = document.getElementById('dashboards-modal');
+            modal.classList.remove('active');
+            document.body.style.overflow = '';
+        }
+
+        // Render dashboard cards
+        function renderDashboardCards(dashboards) {
+            const grid = document.getElementById('dashboards-grid');
+            const countEl = document.getElementById('dashboards-count');
+            
+            if (!dashboards || dashboards.length === 0) {
+                grid.innerHTML = '<div class="no-results">No dashboards found</div>';
+                countEl.textContent = '0 dashboards';
+                return;
+            }
+            
+            // Update count
+            countEl.textContent = `${dashboards.length} dashboard${dashboards.length !== 1 ? 's' : ''}`;
+            
+            // Sort by name
+            dashboards.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+            
+            grid.innerHTML = dashboards.map(d => `
+                <div class="dashboard-card type-${d.type}" onclick="openDashboard('${d.url}')" title="Click to open in Metabase">
+                    <span class="dashboard-card-icon">↗</span>
+                    <div class="dashboard-card-name">${escapeHtml(d.name || 'Unnamed Dashboard')}</div>
+                    <div class="dashboard-card-desc">${escapeHtml(d.description || 'No description')}</div>
+                    <div class="dashboard-card-footer">
+                        <span class="dashboard-card-id">ID: ${d.id}</span>
+                        <span class="dashboard-card-type ${d.type}">${d.type}</span>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        // Filter dashboard cards by search
+        function filterDashboardCards() {
+            const searchTerm = document.getElementById('dashboard-search').value.toLowerCase().trim();
+            
+            let dashboards = [];
+            if (currentModalType === 'all') {
+                dashboards = [...allDashboardsData.content, ...allDashboardsData.message, ...allDashboardsData.email];
+            } else {
+                dashboards = allDashboardsData[currentModalType] || [];
+            }
+            
+            if (searchTerm) {
+                dashboards = dashboards.filter(d => 
+                    (d.name || '').toLowerCase().includes(searchTerm) ||
+                    (d.description || '').toLowerCase().includes(searchTerm) ||
+                    String(d.id).includes(searchTerm)
+                );
+            }
+            
+            renderDashboardCards(dashboards);
+        }
+
+        // Open dashboard in new tab
+        function openDashboard(url) {
+            if (url) {
+                window.open(url, '_blank');
+            }
+        }
+
+        // Escape HTML to prevent XSS
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // Close modal on Escape key
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') {
+                closeDashboardsModal();
+            }
+        });
+
+        // ========== END DASHBOARD MODAL FUNCTIONS ==========
 
         // Render logs with current filter
         function renderLogs() {
