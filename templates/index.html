@@ -94,6 +94,44 @@
             font-size: 1.1rem;
         }
 
+        .mongodb-status {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem 1rem;
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 100px;
+            font-size: 0.85rem;
+        }
+
+        .mongodb-status .status-indicator {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--text-muted);
+        }
+
+        .mongodb-status.connected .status-indicator {
+            background: var(--accent-green);
+            box-shadow: 0 0 8px var(--accent-green);
+        }
+
+        .mongodb-status.disconnected .status-indicator {
+            background: var(--accent-red);
+            box-shadow: 0 0 8px var(--accent-red);
+        }
+
+        .mongodb-status.connected {
+            border-color: rgba(16, 185, 129, 0.3);
+            color: var(--accent-green);
+        }
+
+        .mongodb-status.disconnected {
+            border-color: rgba(239, 68, 68, 0.3);
+            color: var(--accent-red);
+        }
+
         /* Timer Section */
         .timer-section {
             background: var(--bg-card);
@@ -212,6 +250,22 @@
         }
 
         .btn-primary:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .btn-danger {
+            background: linear-gradient(135deg, var(--accent-red), #dc2626);
+            color: white;
+        }
+
+        .btn-danger:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 40px rgba(239, 68, 68, 0.3);
+        }
+
+        .btn-danger:disabled {
             opacity: 0.5;
             cursor: not-allowed;
             transform: none;
@@ -849,6 +903,10 @@
         <header class="header">
             <h1>Dashboard Auto-Clone Service</h1>
             <p>Automatically creates dashboards for new databases every 4 hours</p>
+            <div class="mongodb-status" id="mongodb-status" style="margin-top: 0.75rem;">
+                <span class="status-indicator" id="mongodb-indicator"></span>
+                <span id="mongodb-text">Checking MongoDB...</span>
+            </div>
         </header>
 
         <!-- Timer Section -->
@@ -865,6 +923,12 @@
                         <polygon points="5 3 19 12 5 21 5 3"></polygon>
                     </svg>
                     Run Now
+                </button>
+                <button class="btn btn-danger" id="stop-btn" onclick="stopRun()" style="display: none;">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="6" y="6" width="12" height="12" rx="2"></rect>
+                    </svg>
+                    Stop
                 </button>
                 <button class="btn btn-secondary" onclick="refreshData()">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -1133,17 +1197,41 @@
                 const statusText = document.getElementById('status-text');
                 const countdown = document.getElementById('countdown');
                 const runBtn = document.getElementById('run-btn');
+                const stopBtn = document.getElementById('stop-btn');
                 
                 if (data.is_running) {
                     statusBadge.classList.add('running');
                     statusDot.classList.add('active');
                     countdown.classList.add('running');
                     runBtn.disabled = true;
+                    runBtn.style.display = 'none';
+                    stopBtn.style.display = 'inline-flex';
+                    
+                    // If stop was requested, disable stop button and show stopping state
+                    if (data.stop_requested) {
+                        stopBtn.disabled = true;
+                        stopBtn.innerHTML = `
+                            <svg class="spin" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M21 12a9 9 0 11-6.219-8.56"></path>
+                            </svg>
+                            Stopping...
+                        `;
+                    } else {
+                        stopBtn.disabled = false;
+                        stopBtn.innerHTML = `
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <rect x="6" y="6" width="12" height="12" rx="2"></rect>
+                            </svg>
+                            Stop
+                        `;
+                    }
                 } else {
                     statusBadge.classList.remove('running');
                     statusDot.classList.remove('active');
                     countdown.classList.remove('running');
                     runBtn.disabled = false;
+                    runBtn.style.display = 'inline-flex';
+                    stopBtn.style.display = 'none';
                 }
                 
                 statusText.textContent = data.current_status;
@@ -1224,11 +1312,71 @@
             }
         }
 
+        // Stop the current run
+        async function stopRun() {
+            try {
+                const btn = document.getElementById('stop-btn');
+                btn.disabled = true;
+                btn.innerHTML = `
+                    <svg class="spin" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 12a9 9 0 11-6.219-8.56"></path>
+                    </svg>
+                    Stopping...
+                `;
+                
+                const response = await fetch('/api/stop', { method: 'POST' });
+                const data = await response.json();
+                
+                if (response.ok) {
+                    // Refresh to show updated status
+                    setTimeout(refreshData, 500);
+                } else {
+                    alert(data.error || 'Failed to stop');
+                    btn.disabled = false;
+                    btn.innerHTML = `
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="6" y="6" width="12" height="12" rx="2"></rect>
+                        </svg>
+                        Stop
+                    `;
+                }
+            } catch (error) {
+                console.error('Failed to stop run:', error);
+                alert('Failed to stop');
+            }
+        }
+
         // Refresh all data
         function refreshData() {
             fetchStatus();
             fetchLogs();
             fetchConfig();
+            checkMongoDBStatus();
+        }
+
+        // Check MongoDB connection status
+        async function checkMongoDBStatus() {
+            try {
+                const response = await fetch('/api/mongodb-status');
+                const data = await response.json();
+                
+                const statusEl = document.getElementById('mongodb-status');
+                const textEl = document.getElementById('mongodb-text');
+                
+                if (data.connected) {
+                    statusEl.className = 'mongodb-status connected';
+                    textEl.textContent = 'MongoDB Connected';
+                } else {
+                    statusEl.className = 'mongodb-status disconnected';
+                    textEl.textContent = 'MongoDB Disconnected';
+                }
+            } catch (error) {
+                console.error('Failed to check MongoDB status:', error);
+                const statusEl = document.getElementById('mongodb-status');
+                const textEl = document.getElementById('mongodb-text');
+                statusEl.className = 'mongodb-status disconnected';
+                textEl.textContent = 'MongoDB Error';
+            }
         }
 
         // =====================

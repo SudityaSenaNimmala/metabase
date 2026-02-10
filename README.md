@@ -2,6 +2,8 @@
 
 A 24/7 service that automatically creates dashboards for new databases. Runs every 4 hours and provides a beautiful web UI with countdown timer and activity logs.
 
+**All data is stored in MongoDB** - no local file storage required.
+
 ## Features
 
 - **24/7 Service** - Runs continuously, checking every 4 hours (00:00, 04:00, 08:00, 12:00, 16:00, 20:00)
@@ -9,7 +11,8 @@ A 24/7 service that automatically creates dashboards for new databases. Runs eve
 - **Auto-detect missing dashboards** - only clones for databases without dashboards
 - **Full drillthrough support** - clones linked dashboards with working click behaviors
 - **Beautiful Web UI** - Real-time countdown timer and activity logs
-- **Persistent logs** - All dashboard creations are logged with timestamps
+- **MongoDB Storage** - All configuration and logs stored in MongoDB (cloud-ready)
+- **Stop Button** - Stop running jobs gracefully via the web UI
 
 ## Quick Start
 
@@ -19,41 +22,26 @@ A 24/7 service that automatically creates dashboards for new databases. Runs eve
 pip install -r requirements.txt
 ```
 
-### 2. Configure Metabase Connection
+### 2. Set MongoDB Connection (REQUIRED)
 
-Edit `metabase_config.json`:
+Set the `MONGODB_URI` environment variable:
 
-```json
-{
-    "base_url": "https://your-metabase.com",
-    "username": "your-email@example.com",
-    "password": "your-password"
-}
+**Windows (PowerShell):**
+```powershell
+$env:MONGODB_URI = "mongodb+srv://username:password@cluster.mongodb.net/?retryWrites=true&w=majority"
 ```
 
-### 3. Configure Auto Clone
-
-Edit `auto_clone_config.json`:
-
-```json
-{
-    "source_dashboards": {
-        "content": 3,
-        "message": 5,
-        "email": 7
-    },
-    "dashboards_collections": {
-        "content": 10,
-        "message": 11,
-        "email": 12
-    }
-}
+**Windows (CMD):**
+```cmd
+set MONGODB_URI=mongodb+srv://username:password@cluster.mongodb.net/?retryWrites=true&w=majority
 ```
 
-- `source_dashboards`: Template dashboard IDs to clone for each type
-- `dashboards_collections`: `_DASHBOARDS` collection IDs where main dashboards will be stored
+**Linux/Mac:**
+```bash
+export MONGODB_URI="mongodb+srv://username:password@cluster.mongodb.net/?retryWrites=true&w=majority"
+```
 
-### 4. Start the Service
+### 3. Start the Service
 
 **Windows:**
 ```bash
@@ -65,9 +53,16 @@ start_service.bat
 python dashboard_service.py
 ```
 
-### 5. Open Web UI
+### 4. Configure via Web UI
 
-Navigate to: **http://localhost:5000**
+Navigate to: **http://localhost:1206**
+
+Click **Settings** to configure:
+- Metabase URL, username, and password
+- Source dashboard IDs (templates to clone)
+- Target collection IDs (where dashboards are stored)
+
+All settings are saved to MongoDB automatically.
 
 ## Web UI Features
 
@@ -123,57 +118,77 @@ Acme Collection
 | `/api/status` | GET | Service status and countdown |
 | `/api/logs` | GET | Activity logs and stats |
 | `/api/config` | GET | Current configuration |
+| `/api/settings` | GET/POST | Get/save all settings |
 | `/api/run` | POST | Trigger manual check |
+| `/api/stop` | POST | Stop current running check |
 | `/api/databases` | GET | Database identification results |
+| `/api/mongodb-status` | GET | Check MongoDB connection |
+| `/api/test-connection` | POST | Test Metabase connection |
+
+## MongoDB Collections
+
+All data is stored in MongoDB under the `metabase_dashboard_service` database:
+
+| Collection | Description |
+|------------|-------------|
+| `config` | All configuration (metabase credentials, source dashboards, collection IDs) |
+| `activity_log` | Dashboard creation history with timestamps and status |
 
 ## Project Structure
 
 ```
 metabase/
-├── dashboard_service.py    # Main service with scheduler and API
+├── dashboard_service.py    # Main service with scheduler, API, and MongoDB storage
 ├── templates/
 │   └── index.html         # Web UI
 ├── auto_clone.py          # CLI auto-clone script
-├── auto_clone_config.json # Source dashboards & collection IDs
 ├── simple_clone.py        # Manual dashboard clone
 ├── db_identifier.py       # Database type identification
 ├── metabase_manager.py    # Core Metabase API library
-├── metabase_config.json   # Metabase connection config
 ├── requirements.txt       # Python dependencies
 ├── start_service.bat      # Windows start script
-├── dashboard_activity.json # Activity log (auto-generated)
+├── env.example            # Example environment variables
 └── README.md             # This file
 ```
 
-## Output Files
+## Environment Variables
 
-| File | Description |
-|------|-------------|
-| `dashboard_activity.json` | Persistent activity log |
-| `dashboard_service.log` | Service log file |
-| `db_identification_results.json` | Databases grouped by type |
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `MONGODB_URI` | **Yes** | MongoDB connection string |
+| `METABASE_URL` | No | Initial Metabase URL (can be set via UI) |
+| `METABASE_USERNAME` | No | Initial Metabase username (can be set via UI) |
+| `METABASE_PASSWORD` | No | Initial Metabase password (can be set via UI) |
 
 ## Troubleshooting
 
+### "MongoDB Disconnected" in UI
+- Check that `MONGODB_URI` environment variable is set
+- Verify MongoDB connection string is correct
+- Ensure MongoDB server is accessible
+
 ### "Source dashboard not configured"
-Edit `auto_clone_config.json` with your template dashboard IDs.
+Click Settings in the UI and configure the source dashboard IDs.
 
 ### "No _DASHBOARDS collection configured"
-Edit `auto_clone_config.json` with the collection IDs where dashboards should be stored.
+Click Settings in the UI and configure the collection IDs.
 
 ### Service not starting
-- Check if port 5000 is available
+- Check if port 1206 is available
 - Verify Python dependencies are installed
-- Check `dashboard_service.log` for errors
+- Check console output for errors
 
 ### Dashboards not being created
-- Verify Metabase credentials in `metabase_config.json`
+- Verify Metabase credentials in Settings
+- Test connection using the "Test Connection" button
 - Check if source dashboards exist
 - Review activity log for error messages
 
 ## Requirements
 
 - Python 3.8+
+- MongoDB (local or cloud like MongoDB Atlas)
 - Flask, Flask-CORS, APScheduler
+- pymongo, dnspython
 - requests library
 - Access to Metabase API

@@ -23,18 +23,37 @@ logger = logging.getLogger(__name__)
 
 
 def load_config():
-    """Load configuration"""
+    """Load configuration from MongoDB"""
     try:
-        with open("metabase_config.json", 'r') as f:
-            return json.load(f)
-    except:
+        from pymongo import MongoClient
+        MONGODB_URI = "mongodb+srv://sudityanimmala_db_user:1ckKshSh3rcJBjLj@metabase.crnrwej.mongodb.net/?appName=Metabase"
+        client = MongoClient(MONGODB_URI, serverSelectionTimeoutMS=5000)
+        db = client['metabase_dashboard_service']
+        doc = db['config'].find_one({'key': 'metabase_config'})
+        if doc and doc.get('value'):
+            return doc['value']
         return None
+    except Exception as e:
+        print(f"Error loading config from MongoDB: {e}")
+        return None
+
+
+class StopRequested(Exception):
+    """Exception raised when stop is requested during cloning"""
+    pass
 
 
 class DashboardCloner:
     """Clone dashboards with proper database/table/field mapping and click behavior"""
     
-    def __init__(self, config: dict):
+    def __init__(self, config: dict, stop_check_callback=None):
+        """
+        Initialize DashboardCloner.
+        
+        Args:
+            config: Metabase config dict with base_url, username, password
+            stop_check_callback: Optional callable that returns True if stop was requested
+        """
         self.config = config
         self.base_url = config['base_url'].rstrip('/')
         self.manager = MetabaseManager(MetabaseConfig(
@@ -49,6 +68,13 @@ class DashboardCloner:
         self.dashboard_mapping = {}  # old_dashboard_id -> new_dashboard_id
         self.tab_mapping = {}  # old_tab_id -> new_tab_id (legacy, for single dashboard)
         self.dashboard_tab_mappings = {}  # new_dashboard_id -> {old_tab_id -> new_tab_id}
+        self.stop_check_callback = stop_check_callback
+    
+    def check_stop_requested(self):
+        """Check if stop was requested and raise exception if so"""
+        if self.stop_check_callback and self.stop_check_callback():
+            logger.warning("Stop requested - aborting clone operation")
+            raise StopRequested("Clone operation stopped by user")
         
     def authenticate(self) -> bool:
         """Authenticate with Metabase"""
@@ -234,7 +260,23 @@ class DashboardCloner:
         if 'database' in query:
             query['database'] = new_database_id
         
-        # Handle MBQL queries
+        # Handle MBQL v2 queries with 'stages' (newer Metabase format)
+        # This format is used for MongoDB aggregation pipelines and newer queries
+        if 'stages' in query and isinstance(query['stages'], list):
+            logger.info(f"    Processing MBQL v2 query with {len(query['stages'])} stages")
+            for stage in query['stages']:
+                if isinstance(stage, dict):
+                    # Remap source-table in stage
+                    if 'source-table' in stage:
+                        old_table = stage['source-table']
+                        if isinstance(old_table, int) and old_table in self.table_mapping:
+                            stage['source-table'] = self.table_mapping[old_table]
+                    
+                    # Remap fields recursively in the stage
+                    self._remap_fields_recursive(stage)
+            return query
+        
+        # Handle traditional MBQL queries (type: "query")
         if query.get('type') == 'query' and 'query' in query:
             mbql = query['query']
             
@@ -246,6 +288,9 @@ class DashboardCloner:
             
             # Remap fields recursively
             self._remap_fields_recursive(mbql)
+        
+        # Handle native queries (type: "native") - just update database, query stays same
+        # Native queries use collection/table names which should match across databases
         
         return query
     
@@ -516,6 +561,9 @@ class DashboardCloner:
         import uuid
         import time
         
+        # Check if stop requested before starting
+        self.check_stop_requested()
+        
         for attempt in range(1, max_retries + 1):
             try:
                 # Get original question
@@ -523,6 +571,8 @@ class DashboardCloner:
                 if not original:
                     logger.error(f"  x Could not fetch original question {question_id}")
                     return None
+                
+                logger.debug(f"    Original question type: {original.get('dataset_query', {}).get('type', 'unknown')}")
                 
                 # Remap the query
                 new_query = self.remap_query(original.get('dataset_query', {}), new_database_id)
@@ -552,48 +602,94 @@ class DashboardCloner:
                     headers=self.headers,
                     json=new_question
                 )
+                
+                if response.status_code != 200:
+                    error_detail = response.text[:500] if response.text else "No error details"
+                    logger.error(f"  x API error {response.status_code} for question {question_id}: {error_detail}")
+                    if attempt < max_retries:
+                        logger.info(f"    Retrying in {attempt * 2} seconds...")
+                        time.sleep(attempt * 2)
+                        continue
+                    return None
+                
                 response.raise_for_status()
                 created = response.json()
                 logger.info(f"  + Cloned question: {new_name} (ID: {created['id']})")
                 return created
             
+            except requests.exceptions.HTTPError as e:
+                error_detail = e.response.text[:500] if e.response and e.response.text else str(e)
+                if attempt < max_retries:
+                    logger.warning(f"  ! Attempt {attempt}/{max_retries} failed for question {question_id}: {error_detail}")
+                    logger.info(f"    Retrying in {attempt * 2} seconds...")
+                    time.sleep(attempt * 2)
+                else:
+                    logger.error(f"  x Failed to clone question {question_id} after {max_retries} attempts: {error_detail}")
+                    return None
+            
             except Exception as e:
                 if attempt < max_retries:
                     logger.warning(f"  ! Attempt {attempt}/{max_retries} failed for question {question_id}: {e}")
                     logger.info(f"    Retrying in {attempt * 2} seconds...")
-                    time.sleep(attempt * 2)  # Exponential backoff: 2s, 4s, 6s
+                    time.sleep(attempt * 2)
                 else:
                     logger.error(f"  x Failed to clone question {question_id} after {max_retries} attempts: {e}")
+                    import traceback
+                    traceback.print_exc()
                     return None
         
         return None
     
     def _regenerate_template_tag_ids(self, query: dict):
-        """Regenerate UUIDs for all template tags to avoid conflicts"""
+        """Regenerate UUIDs for all template tags and remap field IDs in dimensions"""
         import uuid
         
         if not query:
             return
         
+        def process_template_tags(template_tags: dict):
+            """Process template tags - regenerate IDs and remap field dimensions"""
+            for tag_name, tag_info in template_tags.items():
+                if not isinstance(tag_info, dict):
+                    continue
+                
+                # Regenerate the tag's own ID
+                if 'id' in tag_info:
+                    old_id = tag_info['id']
+                    tag_info['id'] = str(uuid.uuid4())
+                    logger.debug(f"    Regenerated template tag '{tag_name}' ID")
+                
+                # IMPORTANT: Remap field IDs in dimension references (Field Filters)
+                # Format: ["field", {"lib/uuid": "..."}, FIELD_ID] or ["field", FIELD_ID, {...}]
+                if 'dimension' in tag_info and isinstance(tag_info['dimension'], list):
+                    dimension = tag_info['dimension']
+                    if len(dimension) >= 2 and dimension[0] == 'field':
+                        # Regenerate lib/uuid if present
+                        if len(dimension) >= 2 and isinstance(dimension[1], dict) and 'lib/uuid' in dimension[1]:
+                            dimension[1]['lib/uuid'] = str(uuid.uuid4())
+                        
+                        # Remap field ID - it could be at index 1 (old format) or index 2 (new format)
+                        for i in range(1, len(dimension)):
+                            if isinstance(dimension[i], int):
+                                old_field_id = dimension[i]
+                                if old_field_id in self.field_mapping:
+                                    dimension[i] = self.field_mapping[old_field_id]
+                                    logger.info(f"    Remapped field filter '{tag_name}': {old_field_id} -> {dimension[i]}")
+                                else:
+                                    logger.warning(f"    Could not remap field filter '{tag_name}': field {old_field_id} not in mapping")
+                                break
+        
         # Handle 'native' format (older Metabase)
         if 'native' in query and isinstance(query['native'], dict):
             template_tags = query['native'].get('template-tags', {})
-            for tag_name, tag_info in template_tags.items():
-                if isinstance(tag_info, dict) and 'id' in tag_info:
-                    old_id = tag_info['id']
-                    tag_info['id'] = str(uuid.uuid4())
-                    logger.debug(f"    Regenerated template tag '{tag_name}' ID: {old_id[:8]}... -> {tag_info['id'][:8]}...")
+            process_template_tags(template_tags)
         
         # Handle 'stages' format (newer Metabase MBQL v2)
         if 'stages' in query and isinstance(query['stages'], list):
             for stage in query['stages']:
                 if isinstance(stage, dict):
                     template_tags = stage.get('template-tags', {})
-                    for tag_name, tag_info in template_tags.items():
-                        if isinstance(tag_info, dict) and 'id' in tag_info:
-                            old_id = tag_info['id']
-                            tag_info['id'] = str(uuid.uuid4())
-                            logger.debug(f"    Regenerated template tag '{tag_name}' ID: {old_id[:8]}... -> {tag_info['id'][:8]}...")
+                    process_template_tags(template_tags)
     
     def add_dashcards_with_tabs(self, dashboard_id: int, dashcards: List[dict], 
                                   tabs: List[dict], source_tabs: List[dict]) -> tuple:
@@ -985,6 +1081,9 @@ class DashboardCloner:
             questions_collection_id: Collection for the cloned questions
             dashboard_links_mapping: Mapping of old dashboard IDs to new ones for click behavior
         """
+        # Check if stop requested
+        self.check_stop_requested()
+        
         # Store dashboard link mappings
         if dashboard_links_mapping:
             self.dashboard_mapping.update(dashboard_links_mapping)
@@ -1008,13 +1107,20 @@ class DashboardCloner:
                 db_id = card_info.get('database_id')
                 if db_id:
                     source_db_id = db_id
-            break
+                    break  # Found a card with database_id, stop searching
     
         if source_db_id:
-            logger.info(f"Source database ID: {source_db_id}, Target database ID: {new_database_id}")
-            self.build_table_field_mapping(source_db_id, new_database_id)
+            # Only rebuild mapping if not already built or if it's a different source DB
+            if not self.field_mapping or not self.table_mapping:
+                logger.info(f"Source database ID: {source_db_id}, Target database ID: {new_database_id}")
+                self.build_table_field_mapping(source_db_id, new_database_id)
+            else:
+                logger.info(f"Using existing field mapping ({len(self.field_mapping)} fields, {len(self.table_mapping)} tables)")
         else:
-            logger.warning("Could not determine source database - will try without field mapping")
+            if self.field_mapping:
+                logger.info(f"No database found in cards - using existing field mapping ({len(self.field_mapping)} fields)")
+            else:
+                logger.warning("Could not determine source database - will try without field mapping")
         
         # Analyze linked dashboards
         linked_dashboards = self.analyze_dashboard_links(source_dashboard_id)
@@ -1076,6 +1182,10 @@ class DashboardCloner:
         # Phase 1: Clone all questions first (to build question_mapping)
         logger.info(f"\n--- Cloning {len(ordered_cards)} cards ---")
         
+        cloned_count = 0
+        skipped_count = 0
+        failed_count = 0
+        
         for dashcard in ordered_cards:
             card_info = dashcard.get('card', {})
             original_id = card_info.get('id')
@@ -1083,12 +1193,15 @@ class DashboardCloner:
             if not original_id:
                 # This might be a text card or virtual card
                 logger.info(f"  Skipping card without ID (text/virtual card)")
+                skipped_count += 1
                 continue
             
             if original_id in self.question_mapping:
+                logger.info(f"  Reusing already cloned question {original_id} -> {self.question_mapping[original_id]}")
                 continue  # Already cloned
             
             original_name = card_info.get('name', f'Question {original_id}')
+            logger.info(f"  Cloning question {original_id}: {original_name}")
             
             # Clone the question
             cloned = self.clone_question(
@@ -1100,8 +1213,13 @@ class DashboardCloner:
             
             if cloned:
                 self.question_mapping[original_id] = cloned['id']
+                cloned_count += 1
+            else:
+                logger.error(f"  FAILED to clone question {original_id}: {original_name}")
+                failed_count += 1
         
-        logger.info(f"\nCloned {len(self.question_mapping)} questions")
+        logger.info(f"\nQuestion cloning summary: {cloned_count} cloned, {skipped_count} skipped (text cards), {failed_count} failed")
+        logger.info(f"Total questions in mapping: {len(self.question_mapping)}")
         
         # Now remap and apply dashboard parameters (filters)
         # This must happen AFTER questions are cloned so we can remap card references
@@ -1147,7 +1265,8 @@ class DashboardCloner:
             
             new_card_id = self.question_mapping.get(original_id)
             if not new_card_id:
-                logger.warning(f"  Skipping card {original_id} - no cloned version")
+                logger.error(f"  SKIPPING card {original_id} ({card_info.get('name', 'Unknown')}) - no cloned version found!")
+                logger.error(f"    This question may have failed to clone. Check logs above for errors.")
                 continue
             
             # Remap parameter mappings
@@ -1323,11 +1442,32 @@ class DashboardCloner:
         logger.info("CLONING DASHBOARD WITH ALL LINKED DASHBOARDS")
         logger.info("="*70)
         
-        # Reset mappings for fresh clone
+        # Reset ALL mappings for fresh clone (including table/field mappings)
         self.dashboard_mapping = {}
         self.question_mapping = {}
         self.tab_mapping = {}
         self.dashboard_tab_mappings = {}
+        self.table_mapping = {}
+        self.field_mapping = {}
+        
+        # Build table/field mapping ONCE at the start - this is critical for field filters
+        # We need to find the source database from the main dashboard
+        logger.info(f"\nBuilding field mapping for database {new_database_id}...")
+        main_dash = self.manager.get_dashboard(source_dashboard_id)
+        if main_dash:
+            source_db_id = None
+            ordered_cards = main_dash.get('dashcards', []) or main_dash.get('ordered_cards', [])
+            for dashcard in ordered_cards:
+                card_info = dashcard.get('card', {})
+                if card_info and card_info.get('database_id'):
+                    source_db_id = card_info.get('database_id')
+                    break
+            
+            if source_db_id:
+                self.build_table_field_mapping(source_db_id, new_database_id)
+                logger.info(f"Built field mapping: {len(self.field_mapping)} fields, {len(self.table_mapping)} tables")
+            else:
+                logger.warning("Could not determine source database from main dashboard")
         
         # Find all linked dashboards (in order: deepest first)
         logger.info(f"\nFinding all linked dashboards from {source_dashboard_id}...")
@@ -1358,6 +1498,9 @@ class DashboardCloner:
         # Clone each dashboard
         main_dashboard = None
         for i, dash_id in enumerate(dashboards_to_clone, 1):
+            # Check if stop requested before each dashboard
+            self.check_stop_requested()
+            
             original_name = dashboard_names.get(dash_id, f'Dashboard {dash_id}')
             
             # Create new name

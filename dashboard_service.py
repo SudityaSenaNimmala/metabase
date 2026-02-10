@@ -2,6 +2,9 @@
 Dashboard Auto-Clone Service
 Runs 24/7, checks every 4 hours for databases needing dashboards and creates them.
 Provides a web UI with countdown timer and activity logs.
+
+ALL DATA IS STORED IN MONGODB - No local file storage.
+Set MONGODB_URI environment variable to connect.
 """
 
 import sys
@@ -28,18 +31,258 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 
 from db_identifier import DatabaseIdentifier, DatabaseInfo
-from simple_clone import DashboardCloner
+from simple_clone import DashboardCloner, StopRequested
 
 # =============================================================================
-# Configuration
+# MongoDB Storage - All data stored in MongoDB
 # =============================================================================
 
-LOG_FILE = "dashboard_activity.json"
-CONFIG_FILE = "auto_clone_config.json"
-METABASE_CONFIG_FILE = "metabase_config.json"
+class MongoDBStorage:
+    """Centralized MongoDB storage for all application data"""
+    
+    _instance = None
+    
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+            cls._instance._initialized = False
+        return cls._instance
+    
+    def __init__(self):
+        if self._initialized:
+            return
+        
+        self.mongo_client = None
+        self.db = None
+        self.connected = False
+        self._initialized = True
+        self._connect()
+    
+    def _connect(self):
+        """Connect to MongoDB"""
+        # Default MongoDB connection string (can be overridden by environment variable)
+        DEFAULT_MONGODB_URI = "mongodb+srv://sudityanimmala_db_user:1ckKshSh3rcJBjLj@metabase.crnrwej.mongodb.net/?appName=Metabase"
+        
+        mongodb_uri = os.environ.get('MONGODB_URI', DEFAULT_MONGODB_URI)
+        
+        try:
+            from pymongo import MongoClient
+            logging.info(f"Connecting to MongoDB...")
+            self.mongo_client = MongoClient(mongodb_uri, serverSelectionTimeoutMS=5000)
+            # Test connection
+            self.mongo_client.admin.command('ping')
+            self.db = self.mongo_client['metabase_dashboard_service']
+            self.connected = True
+            logging.info("Connected to MongoDB successfully")
+            
+            # Create indexes for better performance
+            self._create_indexes()
+        except Exception as e:
+            logging.error(f"Failed to connect to MongoDB: {e}")
+            self.connected = False
+    
+    def _create_indexes(self):
+        """Create indexes for better query performance"""
+        try:
+            # Activity log indexes
+            self.db['activity_log'].create_index([('timestamp', -1)])
+            self.db['activity_log'].create_index([('status', 1)])
+            self.db['activity_log'].create_index([('db_type', 1)])
+            
+            # Config indexes
+            self.db['config'].create_index([('key', 1)], unique=True)
+            
+            logging.info("MongoDB indexes created")
+        except Exception as e:
+            logging.warning(f"Could not create indexes: {e}")
+    
+    def is_connected(self) -> bool:
+        """Check if MongoDB is connected"""
+        if not self.connected:
+            # Try to reconnect
+            self._connect()
+        return self.connected
+    
+    def ensure_connected(self) -> bool:
+        """Ensure MongoDB is connected, try to reconnect if not"""
+        if not self.connected:
+            self._connect()
+        return self.connected
+    
+    # =========================================================================
+    # Configuration Storage
+    # =========================================================================
+    
+    def get_config(self, key: str, default: dict = None) -> dict:
+        """Get a configuration value from MongoDB"""
+        if not self.ensure_connected():
+            logging.warning(f"Cannot get config '{key}': MongoDB not connected")
+            return default or {}
+        
+        try:
+            doc = self.db['config'].find_one({'key': key})
+            logging.info(f"MongoDB get_config '{key}': found={doc is not None}")
+            if doc:
+                doc.pop('_id', None)
+                doc.pop('key', None)
+                value = doc.get('value', default or {})
+                logging.info(f"MongoDB get_config '{key}' value: {value}")
+                return value
+            return default or {}
+        except Exception as e:
+            logging.error(f"Failed to get config '{key}': {e}")
+            return default or {}
+    
+    def set_config(self, key: str, value: dict) -> bool:
+        """Set a configuration value in MongoDB"""
+        if not self.ensure_connected():
+            logging.error(f"Cannot set config '{key}': MongoDB not connected")
+            return False
+        
+        try:
+            result = self.db['config'].update_one(
+                {'key': key},
+                {'$set': {'key': key, 'value': value, 'updated_at': datetime.now().isoformat()}},
+                upsert=True
+            )
+            logging.info(f"MongoDB set_config '{key}': matched={result.matched_count}, modified={result.modified_count}, upserted={result.upserted_id}")
+            return True
+        except Exception as e:
+            logging.error(f"Failed to set config '{key}': {e}")
+            import traceback
+            traceback.print_exc()
+            return False
+    
+    def get_metabase_config(self) -> dict:
+        """Get Metabase connection configuration"""
+        return self.get_config('metabase_config', {
+            'base_url': '',
+            'username': '',
+            'password': ''
+        })
+    
+    def set_metabase_config(self, config: dict) -> bool:
+        """Set Metabase connection configuration"""
+        return self.set_config('metabase_config', config)
+    
+    def get_auto_clone_config(self) -> dict:
+        """Get auto clone configuration"""
+        return self.get_config('auto_clone_config', {
+            'source_dashboards': {'content': None, 'message': None, 'email': None},
+            'dashboards_collections': {'content': None, 'message': None, 'email': None}
+        })
+    
+    def set_auto_clone_config(self, config: dict) -> bool:
+        """Set auto clone configuration"""
+        return self.set_config('auto_clone_config', config)
+    
+    # =========================================================================
+    # Activity Log Storage
+    # =========================================================================
+    
+    def add_activity_log(self, entry: dict) -> bool:
+        """Add an activity log entry"""
+        if not self.connected:
+            return False
+        
+        try:
+            self.db['activity_log'].insert_one(entry)
+            return True
+        except Exception as e:
+            logging.error(f"Failed to add activity log: {e}")
+            return False
+    
+    def get_activity_logs(self, limit: int = 100) -> List[dict]:
+        """Get activity log entries"""
+        if not self.connected:
+            return []
+        
+        try:
+            cursor = self.db['activity_log'].find().sort('timestamp', -1).limit(limit)
+            entries = []
+            for doc in cursor:
+                doc.pop('_id', None)
+                entries.append(doc)
+            return entries
+        except Exception as e:
+            logging.error(f"Failed to get activity logs: {e}")
+            return []
+    
+    def get_activity_stats(self) -> dict:
+        """Get activity log statistics"""
+        if not self.connected:
+            return {"total": 0, "success": 0, "failed": 0, "deleted": 0, "by_type": {"content": 0, "message": 0, "email": 0}}
+        
+        try:
+            pipeline = [
+                {
+                    '$group': {
+                        '_id': None,
+                        'total': {'$sum': 1},
+                        'success': {'$sum': {'$cond': [{'$eq': ['$status', 'success']}, 1, 0]}},
+                        'deleted': {'$sum': {'$cond': [{'$eq': ['$status', 'deleted']}, 1, 0]}},
+                        'failed': {'$sum': {'$cond': [{'$eq': ['$status', 'failed']}, 1, 0]}},
+                        'content': {'$sum': {'$cond': [{'$and': [{'$eq': ['$status', 'success']}, {'$eq': ['$db_type', 'content']}]}, 1, 0]}},
+                        'message': {'$sum': {'$cond': [{'$and': [{'$eq': ['$status', 'success']}, {'$eq': ['$db_type', 'message']}]}, 1, 0]}},
+                        'email': {'$sum': {'$cond': [{'$and': [{'$eq': ['$status', 'success']}, {'$eq': ['$db_type', 'email']}]}, 1, 0]}}
+                    }
+                }
+            ]
+            result = list(self.db['activity_log'].aggregate(pipeline))
+            if result:
+                r = result[0]
+                return {
+                    "total": r.get('total', 0),
+                    "success": r.get('success', 0),
+                    "failed": r.get('failed', 0),
+                    "deleted": r.get('deleted', 0),
+                    "by_type": {
+                        "content": r.get('content', 0),
+                        "message": r.get('message', 0),
+                        "email": r.get('email', 0)
+                    }
+                }
+            return {"total": 0, "success": 0, "failed": 0, "deleted": 0, "by_type": {"content": 0, "message": 0, "email": 0}}
+        except Exception as e:
+            logging.error(f"Failed to get activity stats: {e}")
+            return {"total": 0, "success": 0, "failed": 0, "deleted": 0, "by_type": {"content": 0, "message": 0, "email": 0}}
+    
+    # =========================================================================
+    # Database Identification Results Storage
+    # =========================================================================
+    
+    def save_db_identification_results(self, results: dict) -> bool:
+        """Save database identification results"""
+        return self.set_config('db_identification_results', results)
+    
+    def get_db_identification_results(self) -> dict:
+        """Get database identification results"""
+        return self.get_config('db_identification_results', {
+            'content': [], 'message': [], 'email': [], 'unknown': []
+        })
+    
+    # =========================================================================
+    # Dashboard Coverage Storage
+    # =========================================================================
+    
+    def save_dashboard_coverage(self, coverage: dict) -> bool:
+        """Save dashboard coverage data"""
+        return self.set_config('dashboard_coverage', coverage)
+    
+    def get_dashboard_coverage(self) -> dict:
+        """Get dashboard coverage data"""
+        return self.get_config('dashboard_coverage', {
+            'databases_with_dashboards': {},
+            'databases_without_dashboards': {}
+        })
+
+
+# Global MongoDB storage instance
+mongo_storage = MongoDBStorage()
+
 
 # =============================================================================
-# Activity Log
+# Activity Log Entry
 # =============================================================================
 
 @dataclass
@@ -56,162 +299,23 @@ class ActivityLogEntry:
 
 
 class ActivityLog:
-    """Manages the activity log for dashboard creation - uses MongoDB if available, falls back to file"""
+    """Manages the activity log for dashboard creation - uses MongoDB"""
     
-    def __init__(self, log_file: str = LOG_FILE):
-        self.log_file = log_file
-        self.entries: List[ActivityLogEntry] = []
-        self.mongo_client = None
-        self.mongo_db = None
-        self.mongo_collection = None
-        self.use_mongodb = False
-        
-        # Try to connect to MongoDB
-        self._init_mongodb()
-        
-        # Load existing entries
-        self.load()
-    
-    def _init_mongodb(self):
-        """Initialize MongoDB connection if MONGODB_URI is set"""
-        mongodb_uri = os.environ.get('MONGODB_URI')
-        if mongodb_uri:
-            try:
-                from pymongo import MongoClient
-                self.mongo_client = MongoClient(mongodb_uri, serverSelectionTimeoutMS=5000)
-                # Test connection
-                self.mongo_client.admin.command('ping')
-                self.mongo_db = self.mongo_client['metabase_dashboard_service']
-                self.mongo_collection = self.mongo_db['activity_log']
-                self.use_mongodb = True
-                logging.info("Connected to MongoDB for activity log storage")
-            except Exception as e:
-                logging.warning(f"Could not connect to MongoDB, using file storage: {e}")
-                self.use_mongodb = False
-        else:
-            logging.info("MONGODB_URI not set, using file storage for activity log")
-    
-    def load(self):
-        """Load existing log from MongoDB or file"""
-        if self.use_mongodb:
-            try:
-                # Load from MongoDB (sorted by timestamp descending)
-                cursor = self.mongo_collection.find().sort('timestamp', -1)
-                self.entries = []
-                for doc in cursor:
-                    # Remove MongoDB _id field
-                    doc.pop('_id', None)
-                    self.entries.append(ActivityLogEntry(**doc))
-                logging.info(f"Loaded {len(self.entries)} entries from MongoDB")
-                return
-            except Exception as e:
-                logging.error(f"Failed to load from MongoDB: {e}")
-        
-        # Fallback to file
-        try:
-            if os.path.exists(self.log_file):
-                with open(self.log_file, 'r') as f:
-                    data = json.load(f)
-                    self.entries = [ActivityLogEntry(**entry) for entry in data.get('entries', [])]
-        except Exception as e:
-            logging.error(f"Failed to load activity log: {e}")
-            self.entries = []
-    
-    def save(self):
-        """Save log to file (for backup, MongoDB saves on add_entry)"""
-        try:
-            with open(self.log_file, 'w') as f:
-                json.dump({
-                    'entries': [asdict(e) for e in self.entries],
-                    'last_updated': datetime.now().isoformat()
-                }, f, indent=2)
-        except Exception as e:
-            logging.error(f"Failed to save activity log: {e}")
+    def __init__(self):
+        self.storage = mongo_storage
     
     def add_entry(self, entry: ActivityLogEntry):
         """Add a new entry to the log"""
-        self.entries.insert(0, entry)  # Add to beginning (newest first)
-        
-        if self.use_mongodb:
-            try:
-                # Insert into MongoDB
-                self.mongo_collection.insert_one(asdict(entry))
-                logging.debug(f"Saved entry to MongoDB: {entry.dashboard_name}")
-            except Exception as e:
-                logging.error(f"Failed to save to MongoDB: {e}")
-        
-        # Also save to file as backup
-        self.save()
+        self.storage.add_activity_log(asdict(entry))
+        logging.debug(f"Saved entry to MongoDB: {entry.dashboard_name}")
     
     def get_entries(self, limit: int = 100) -> List[dict]:
         """Get log entries as dictionaries"""
-        if self.use_mongodb:
-            try:
-                cursor = self.mongo_collection.find().sort('timestamp', -1).limit(limit)
-                entries = []
-                for doc in cursor:
-                    doc.pop('_id', None)
-                    entries.append(doc)
-                return entries
-            except Exception as e:
-                logging.error(f"Failed to get entries from MongoDB: {e}")
-        
-        return [asdict(e) for e in self.entries[:limit]]
+        return self.storage.get_activity_logs(limit)
     
     def get_stats(self) -> dict:
         """Get statistics from the log"""
-        if self.use_mongodb:
-            try:
-                # Use MongoDB aggregation for stats
-                pipeline = [
-                    {
-                        '$group': {
-                            '_id': None,
-                            'total': {'$sum': 1},
-                            'success': {'$sum': {'$cond': [{'$eq': ['$status', 'success']}, 1, 0]}},
-                            'deleted': {'$sum': {'$cond': [{'$eq': ['$status', 'deleted']}, 1, 0]}},
-                            'failed': {'$sum': {'$cond': [{'$eq': ['$status', 'failed']}, 1, 0]}},
-                            'content': {'$sum': {'$cond': [{'$and': [{'$eq': ['$status', 'success']}, {'$eq': ['$db_type', 'content']}]}, 1, 0]}},
-                            'message': {'$sum': {'$cond': [{'$and': [{'$eq': ['$status', 'success']}, {'$eq': ['$db_type', 'message']}]}, 1, 0]}},
-                            'email': {'$sum': {'$cond': [{'$and': [{'$eq': ['$status', 'success']}, {'$eq': ['$db_type', 'email']}]}, 1, 0]}}
-                        }
-                    }
-                ]
-                result = list(self.mongo_collection.aggregate(pipeline))
-                if result:
-                    r = result[0]
-                    return {
-                        "total": r.get('total', 0),
-                        "success": r.get('success', 0),
-                        "failed": r.get('failed', 0),
-                        "deleted": r.get('deleted', 0),
-                        "by_type": {
-                            "content": r.get('content', 0),
-                            "message": r.get('message', 0),
-                            "email": r.get('email', 0)
-                        }
-                    }
-            except Exception as e:
-                logging.error(f"Failed to get stats from MongoDB: {e}")
-        
-        # Fallback to in-memory calculation
-        total = len(self.entries)
-        success = sum(1 for e in self.entries if e.status == "success")
-        deleted = sum(1 for e in self.entries if e.status == "deleted")
-        failed = total - success - deleted
-        
-        by_type = {"content": 0, "message": 0, "email": 0}
-        for e in self.entries:
-            if e.status == "success" and e.db_type in by_type:
-                by_type[e.db_type] += 1
-        
-        return {
-            "total": total,
-            "success": success,
-            "failed": failed,
-            "deleted": deleted,
-            "by_type": by_type
-        }
+        return self.storage.get_activity_stats()
 
 
 # =============================================================================
@@ -222,27 +326,30 @@ class DashboardService:
     """Main service that runs the auto-clone process"""
     
     def __init__(self):
+        self.storage = mongo_storage
         self.activity_log = ActivityLog()
         self.last_run: Optional[datetime] = None
         self.next_run: Optional[datetime] = None
         self.is_running = False
+        self.stop_requested = False  # Flag to stop the current run
         self.current_status = "Idle"
         self.metabase_config = None
         self.auto_config = None
         self.base_url = ""
         
-        # Load configs
+        # Load configs from MongoDB
         self._load_configs()
     
     def _load_configs(self):
-        """Load configuration files or fall back to environment variables"""
-        # Try loading from file first, then fall back to environment variables
-        try:
-            with open(METABASE_CONFIG_FILE, 'r') as f:
-                self.metabase_config = json.load(f)
-                self.base_url = self.metabase_config['base_url'].rstrip('/')
-        except FileNotFoundError:
-            # Fall back to environment variables
+        """Load configuration from MongoDB"""
+        # Load Metabase config from MongoDB
+        self.metabase_config = self.storage.get_metabase_config()
+        
+        if self.metabase_config.get('base_url'):
+            self.base_url = self.metabase_config['base_url'].rstrip('/')
+            logging.info("Loaded Metabase config from MongoDB")
+        else:
+            # Fall back to environment variables if MongoDB config is empty
             metabase_url = os.environ.get('METABASE_URL')
             metabase_username = os.environ.get('METABASE_USERNAME')
             metabase_password = os.environ.get('METABASE_PASSWORD')
@@ -254,27 +361,18 @@ class DashboardService:
                     'password': metabase_password
                 }
                 self.base_url = metabase_url.rstrip('/')
-                logging.info("Loaded metabase config from environment variables")
+                # Save to MongoDB for future use
+                self.storage.set_metabase_config(self.metabase_config)
+                logging.info("Loaded Metabase config from environment variables and saved to MongoDB")
             else:
-                logging.error("Metabase config file not found and environment variables not set (METABASE_URL, METABASE_USERNAME, METABASE_PASSWORD)")
-        except Exception as e:
-            logging.error(f"Failed to load metabase config: {e}")
+                logging.warning("Metabase config not found in MongoDB or environment variables")
         
-        try:
-            with open(CONFIG_FILE, 'r') as f:
-                self.auto_config = json.load(f)
-        except FileNotFoundError:
-            # Create default auto_config if not found
-            self.auto_config = {
-                "source_dashboards": {},
-                "mappings": []
-            }
-            logging.info("Auto clone config not found, using defaults")
-        except Exception as e:
-            logging.error(f"Failed to load auto clone config: {e}")
+        # Load auto clone config from MongoDB
+        self.auto_config = self.storage.get_auto_clone_config()
+        logging.info("Loaded auto clone config from MongoDB")
     
     def reload_configs(self):
-        """Reload configuration files"""
+        """Reload configuration from MongoDB"""
         self._load_configs()
     
     def _get_databases_by_type(self, identifier) -> Dict[str, List]:
@@ -305,6 +403,7 @@ class DashboardService:
         
         return {
             "is_running": self.is_running,
+            "stop_requested": self.stop_requested,
             "current_status": self.current_status,
             "last_run": self.last_run.isoformat() if self.last_run else None,
             "next_run": self.next_run.isoformat() if self.next_run else None,
@@ -317,6 +416,15 @@ class DashboardService:
         No modifications - keeps the name exactly as it is in Metabase."""
         return db_name
     
+    def stop_run(self):
+        """Request to stop the current run"""
+        if self.is_running:
+            self.stop_requested = True
+            self.current_status = "Stopping..."
+            logging.info("Stop requested - will stop after current task completes")
+            return True
+        return False
+    
     def run_check(self):
         """Run the dashboard check and clone process"""
         if self.is_running:
@@ -324,6 +432,7 @@ class DashboardService:
             return
         
         self.is_running = True
+        self.stop_requested = False  # Reset stop flag
         self.current_status = "Running check..."
         self.last_run = datetime.now()
         
@@ -358,13 +467,17 @@ class DashboardService:
             
             # Initialize components
             self.current_status = "Authenticating..."
-            identifier = DatabaseIdentifier(METABASE_CONFIG_FILE)
+            identifier = DatabaseIdentifier(config=self.metabase_config)
             if not identifier.authenticate():
                 self.current_status = "Error: Authentication failed"
                 logging.error("Failed to authenticate with Metabase")
                 return
             
-            cloner = DashboardCloner(self.metabase_config)
+            # Pass stop check callback so cloner can abort mid-operation
+            cloner = DashboardCloner(
+                self.metabase_config,
+                stop_check_callback=lambda: self.stop_requested
+            )
             if not cloner.authenticate():
                 self.current_status = "Error: Cloner authentication failed"
                 logging.error("Failed to authenticate cloner")
@@ -372,9 +485,21 @@ class DashboardService:
             
             headers = identifier.headers
             
+            # Check if stop was requested
+            if self.stop_requested:
+                self.current_status = "Stopped by user"
+                logging.info("Stopped by user before database scan")
+                return
+            
             # Get databases by type - use cached results if available
             self.current_status = "Loading database info..."
             grouped = self._get_databases_by_type(identifier)
+            
+            # Check if stop was requested
+            if self.stop_requested:
+                self.current_status = "Stopped by user"
+                logging.info("Stopped by user after database scan")
+                return
             
             # Find databases with existing dashboards - ONLY check the 3 _DASHBOARDS collections
             # Also find empty dashboards (decomposed DBs) for cleanup
@@ -456,6 +581,14 @@ class DashboardService:
             
             # Clone dashboards
             for i, task in enumerate(tasks, 1):
+                # Check if stop was requested
+                if self.stop_requested:
+                    self.current_status = "Stopped by user"
+                    logging.info("="*60)
+                    logging.info(f"STOPPED BY USER after {i-1}/{len(tasks)} databases")
+                    logging.info("="*60)
+                    return
+                
                 db = task["database"]
                 self.current_status = f"Cloning {i}/{len(tasks)}: {db.name}"
                 logging.info(f"\n[{i}/{len(tasks)}] Cloning for: {db.name}")
@@ -508,6 +641,14 @@ class DashboardService:
                             last_error = "Clone returned None"
                             if attempt < MAX_RETRIES:
                                 logging.warning(f"  Attempt {attempt} failed, will retry...")
+                    
+                    except StopRequested:
+                        # User requested stop - exit immediately
+                        self.current_status = "Stopped by user"
+                        logging.info("="*60)
+                        logging.info(f"STOPPED BY USER during clone of {db.name}")
+                        logging.info("="*60)
+                        return
                     
                     except Exception as e:
                         last_error = str(e)
@@ -755,26 +896,36 @@ def trigger_run():
     return jsonify({"message": "Check started"})
 
 
+@app.route('/api/stop', methods=['POST'])
+def stop_run():
+    """Stop the current running check"""
+    if not service.is_running:
+        return jsonify({"error": "No check is currently running"}), 400
+    
+    if service.stop_run():
+        return jsonify({"message": "Stop requested - will stop after current task"})
+    else:
+        return jsonify({"error": "Could not stop"}), 500
+
+
 @app.route('/api/refresh-cache', methods=['POST'])
 def refresh_cache():
-    """Force refresh the database type cache"""
+    """Force refresh the database identification cache in MongoDB"""
     try:
-        cache_file = "db_type_cache.json"
-        if os.path.exists(cache_file):
-            os.remove(cache_file)
-            return jsonify({"message": "Cache cleared. Next run will rescan databases."})
-        else:
-            return jsonify({"message": "No cache to clear."})
+        # Clear the cached results in MongoDB
+        mongo_storage.save_db_identification_results({
+            'content': [], 'message': [], 'email': [], 'unknown': []
+        })
+        return jsonify({"message": "Cache cleared. Next run will rescan databases."})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 
 @app.route('/api/databases')
 def get_databases():
-    """Get database identification results"""
+    """Get database identification results from MongoDB"""
     try:
-        with open("db_identification_results.json", 'r') as f:
-            data = json.load(f)
+        data = mongo_storage.get_db_identification_results()
         
         summary = {
             "content": len(data.get("content", [])),
@@ -793,19 +944,25 @@ def get_databases():
 
 @app.route('/api/settings', methods=['GET'])
 def get_settings():
-    """Get all settings (credentials and config)"""
+    """Get all settings from MongoDB"""
     try:
-        # Load metabase config
-        metabase_config = {}
-        if os.path.exists(METABASE_CONFIG_FILE):
-            with open(METABASE_CONFIG_FILE, 'r') as f:
-                metabase_config = json.load(f)
+        # Check MongoDB connection
+        if not mongo_storage.is_connected():
+            logging.warning("MongoDB not connected when getting settings")
+            return jsonify({
+                "error": "MongoDB not connected",
+                "metabase": {"base_url": "", "username": "", "password": ""},
+                "source_dashboards": {"content": None, "message": None, "email": None},
+                "dashboards_collections": {"content": None, "message": None, "email": None}
+            })
         
-        # Load auto clone config
-        auto_config = {}
-        if os.path.exists(CONFIG_FILE):
-            with open(CONFIG_FILE, 'r') as f:
-                auto_config = json.load(f)
+        # Load metabase config from MongoDB
+        metabase_config = mongo_storage.get_metabase_config()
+        logging.info(f"Loaded metabase config: {metabase_config.get('base_url', 'N/A')}, {metabase_config.get('username', 'N/A')}")
+        
+        # Load auto clone config from MongoDB
+        auto_config = mongo_storage.get_auto_clone_config()
+        logging.info(f"Loaded auto config: {auto_config}")
         
         return jsonify({
             "metabase": {
@@ -825,24 +982,27 @@ def get_settings():
             })
         })
     except Exception as e:
+        logging.error(f"Error getting settings: {e}")
         return jsonify({"error": str(e)}), 500
 
 
 @app.route('/api/settings', methods=['POST'])
 def save_settings():
-    """Save all settings"""
+    """Save all settings to MongoDB"""
     try:
-        data = request.json
+        # Check MongoDB connection first
+        if not mongo_storage.is_connected():
+            return jsonify({"error": "MongoDB is not connected. Please check MONGODB_URI environment variable."}), 500
         
-        # Save metabase config
+        data = request.json
+        logging.info(f"Saving settings: {data}")
+        
+        # Save metabase config to MongoDB
         if 'metabase' in data:
             metabase_data = data['metabase']
             
             # Load existing config to preserve password if not changed
-            existing_config = {}
-            if os.path.exists(METABASE_CONFIG_FILE):
-                with open(METABASE_CONFIG_FILE, 'r') as f:
-                    existing_config = json.load(f)
+            existing_config = mongo_storage.get_metabase_config()
             
             new_config = {
                 "base_url": metabase_data.get('base_url', existing_config.get('base_url', '')),
@@ -850,37 +1010,37 @@ def save_settings():
                 "password": metabase_data.get('password') if metabase_data.get('password') and metabase_data.get('password') != '********' else existing_config.get('password', '')
             }
             
-            with open(METABASE_CONFIG_FILE, 'w') as f:
-                json.dump(new_config, f, indent=4)
+            if not mongo_storage.set_metabase_config(new_config):
+                return jsonify({"error": "Failed to save Metabase config to MongoDB"}), 500
+            logging.info(f"Saved metabase config: {new_config['base_url']}, {new_config['username']}")
         
-        # Save auto clone config
-        auto_config = {}
-        if os.path.exists(CONFIG_FILE):
-            with open(CONFIG_FILE, 'r') as f:
-                auto_config = json.load(f)
+        # Save auto clone config to MongoDB
+        existing_auto_config = mongo_storage.get_auto_clone_config()
         
         if 'source_dashboards' in data:
-            auto_config['source_dashboards'] = {
+            existing_auto_config['source_dashboards'] = {
                 "content": data['source_dashboards'].get('content'),
                 "message": data['source_dashboards'].get('message'),
                 "email": data['source_dashboards'].get('email')
             }
         
         if 'dashboards_collections' in data:
-            auto_config['dashboards_collections'] = {
+            existing_auto_config['dashboards_collections'] = {
                 "content": data['dashboards_collections'].get('content'),
                 "message": data['dashboards_collections'].get('message'),
                 "email": data['dashboards_collections'].get('email')
             }
         
-        with open(CONFIG_FILE, 'w') as f:
-            json.dump(auto_config, f, indent=4)
+        if not mongo_storage.set_auto_clone_config(existing_auto_config):
+            return jsonify({"error": "Failed to save auto clone config to MongoDB"}), 500
+        logging.info(f"Saved auto clone config: {existing_auto_config}")
         
         # Reload configs in service
         service.reload_configs()
         
         return jsonify({"message": "Settings saved successfully"})
     except Exception as e:
+        logging.error(f"Error saving settings: {e}")
         return jsonify({"error": str(e)}), 500
 
 
@@ -893,12 +1053,10 @@ def test_connection():
         username = data.get('username', '')
         password = data.get('password', '')
         
-        # If password is masked, use existing password
+        # If password is masked, use existing password from MongoDB
         if password == '********':
-            if os.path.exists(METABASE_CONFIG_FILE):
-                with open(METABASE_CONFIG_FILE, 'r') as f:
-                    existing = json.load(f)
-                    password = existing.get('password', '')
+            existing = mongo_storage.get_metabase_config()
+            password = existing.get('password', '')
         
         if not base_url or not username or not password:
             return jsonify({"success": False, "error": "Missing credentials"}), 400
@@ -920,8 +1078,15 @@ def test_connection():
         return jsonify({"success": False, "error": "Could not connect to server"})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/mongodb-status')
+def mongodb_status():
+    """Check MongoDB connection status"""
+    return jsonify({
+        "connected": mongo_storage.is_connected(),
+        "message": "Connected to MongoDB" if mongo_storage.is_connected() else "Not connected to MongoDB. Set MONGODB_URI environment variable."
+    })
 
 
 # =============================================================================

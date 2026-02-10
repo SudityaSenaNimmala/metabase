@@ -93,8 +93,19 @@ class DatabaseInfo:
 class DatabaseIdentifier:
     """Identifies database types by scanning their table structures"""
     
-    def __init__(self, config_file: str = "metabase_config.json"):
-        self.config = self._load_config(config_file)
+    def __init__(self, config_file: str = None, config: dict = None):
+        """
+        Initialize DatabaseIdentifier.
+        
+        Args:
+            config_file: Path to config file (legacy support)
+            config: Config dict with base_url, username, password (preferred)
+        """
+        if config:
+            self.config = config
+        else:
+            self.config = self._load_config(config_file or "metabase_config.json")
+        
         self.base_url = self.config['base_url'].rstrip('/')
         self.headers = {}
         
