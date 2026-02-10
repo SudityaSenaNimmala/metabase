@@ -517,44 +517,40 @@
             opacity: 0.5;
         }
 
-        /* Log Filters */
+        /* Log Filters - Compact Single Row */
         .log-filters {
             display: flex;
-            flex-direction: column;
-            padding: 1rem 2rem;
+            padding: 0.75rem 1.5rem;
             border-bottom: 1px solid var(--border-color);
             background: var(--bg-secondary);
-            gap: 0.75rem;
         }
 
-        .filter-group {
+        .filter-row {
             display: flex;
             align-items: center;
-            gap: 1rem;
-            flex-wrap: wrap;
-        }
-
-        .filter-label {
-            color: var(--text-muted);
-            font-size: 0.8rem;
-            min-width: 100px;
-            font-weight: 500;
-        }
-
-        .filter-buttons {
-            display: flex;
             gap: 0.5rem;
             flex-wrap: wrap;
         }
 
+        .filter-divider {
+            color: var(--border-color);
+            margin: 0 0.25rem;
+            font-size: 0.9rem;
+        }
+
+        .filter-buttons {
+            display: flex;
+            gap: 0.25rem;
+        }
+
         .filter-btn {
-            padding: 0.4rem 0.8rem;
+            padding: 0.3rem 0.6rem;
             border: 1px solid var(--border-color);
-            border-radius: 6px;
+            border-radius: 4px;
             background: var(--bg-primary);
             color: var(--text-secondary);
             font-family: 'Inter', sans-serif;
-            font-size: 0.8rem;
+            font-size: 0.75rem;
             cursor: pointer;
             transition: all 0.2s ease;
         }
@@ -605,17 +601,17 @@
         .date-picker-container {
             display: flex;
             align-items: center;
-            gap: 0.75rem;
+            gap: 0.4rem;
         }
 
         .date-picker-container input[type="date"] {
-            padding: 0.4rem 0.75rem;
+            padding: 0.3rem 0.5rem;
             border: 1px solid var(--border-color);
-            border-radius: 6px;
+            border-radius: 4px;
             background: var(--bg-primary);
             color: var(--text-primary);
             font-family: 'JetBrains Mono', monospace;
-            font-size: 0.8rem;
+            font-size: 0.75rem;
             cursor: pointer;
         }
 
@@ -1032,49 +1028,36 @@
                 <span class="log-count" id="log-count">0 entries</span>
             </div>
             
-            <!-- Enhanced Filters -->
+            <!-- Compact Filters -->
             <div class="log-filters">
-                <!-- Time Period Filter -->
-                <div class="filter-group">
-                    <label class="filter-label">Time Period:</label>
+                <!-- Row 1: Time filters + Date picker -->
+                <div class="filter-row">
                     <div class="filter-buttons">
                         <button class="filter-btn active" data-filter="time" data-value="all" onclick="setTimeFilter('all')">All</button>
-                        <button class="filter-btn" data-filter="time" data-value="1hour" onclick="setTimeFilter('1hour')">Last Hour</button>
+                        <button class="filter-btn" data-filter="time" data-value="1hour" onclick="setTimeFilter('1hour')">1h</button>
                         <button class="filter-btn" data-filter="time" data-value="today" onclick="setTimeFilter('today')">Today</button>
-                        <button class="filter-btn" data-filter="time" data-value="7days" onclick="setTimeFilter('7days')">Last 7 Days</button>
-                        <button class="filter-btn" data-filter="time" data-value="month" onclick="setTimeFilter('month')">This Month</button>
-                        <button class="filter-btn" data-filter="time" data-value="year" onclick="setTimeFilter('year')">This Year</button>
+                        <button class="filter-btn" data-filter="time" data-value="7days" onclick="setTimeFilter('7days')">7d</button>
+                        <button class="filter-btn" data-filter="time" data-value="month" onclick="setTimeFilter('month')">Month</button>
+                        <button class="filter-btn" data-filter="time" data-value="year" onclick="setTimeFilter('year')">Year</button>
                     </div>
-                </div>
-                
-                <!-- Dashboard Type Filter (multi-select) -->
-                <div class="filter-group">
-                    <label class="filter-label">Dashboard Type:</label>
+                    <span class="filter-divider">|</span>
                     <div class="filter-buttons">
-                        <button class="filter-btn active" data-filter="type" data-value="all" onclick="toggleTypeFilter('all')">All Types</button>
+                        <button class="filter-btn active" data-filter="type" data-value="all" onclick="toggleTypeFilter('all')">All</button>
                         <button class="filter-btn type-content" data-filter="type" data-value="content" onclick="toggleTypeFilter('content')">Content</button>
                         <button class="filter-btn type-message" data-filter="type" data-value="message" onclick="toggleTypeFilter('message')">Message</button>
                         <button class="filter-btn type-email" data-filter="type" data-value="email" onclick="toggleTypeFilter('email')">Email</button>
                     </div>
-                </div>
-                
-                <!-- Status Filter (multi-select) -->
-                <div class="filter-group">
-                    <label class="filter-label">Status:</label>
+                    <span class="filter-divider">|</span>
                     <div class="filter-buttons">
-                        <button class="filter-btn active" data-filter="status" data-value="all" onclick="toggleStatusFilter('all')">All Status</button>
+                        <button class="filter-btn active" data-filter="status" data-value="all" onclick="toggleStatusFilter('all')">All</button>
                         <button class="filter-btn status-success" data-filter="status" data-value="success" onclick="toggleStatusFilter('success')">Success</button>
                         <button class="filter-btn status-failed" data-filter="status" data-value="failed" onclick="toggleStatusFilter('failed')">Failed</button>
                         <button class="filter-btn status-deleted" data-filter="status" data-value="deleted" onclick="toggleStatusFilter('deleted')">Deleted</button>
                     </div>
-                </div>
-                
-                <!-- Date Picker -->
-                <div class="filter-group">
-                    <label class="filter-label">Specific Date:</label>
+                    <span class="filter-divider">|</span>
                     <div class="date-picker-container">
                         <input type="date" id="date-picker" onchange="filterByDate(this.value)">
-                        <button class="filter-btn clear-btn" onclick="clearAllFilters()">Clear All</button>
+                        <button class="filter-btn clear-btn" onclick="clearAllFilters()">Reset</button>
                     </div>
                 </div>
             </div>

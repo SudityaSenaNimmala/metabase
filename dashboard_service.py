@@ -896,10 +896,17 @@ def get_logs():
 
 @app.route('/api/dashboard-counts')
 def get_dashboard_counts():
-    """Get actual dashboard counts from _DASHBOARDS collections in Metabase"""
+    """Get dashboard counts from _DASHBOARDS collections using IDs from MongoDB config"""
     try:
         if not service.metabase_config:
-            return jsonify({"error": "Metabase not configured"}), 400
+            return jsonify({"content": 0, "message": 0, "email": 0, "total": 0})
+        
+        # Get collection IDs from MongoDB config
+        auto_config = mongo_storage.get_auto_clone_config()
+        dashboards_collections = auto_config.get('dashboards_collections', {})
+        
+        if not any(dashboards_collections.values()):
+            return jsonify({"content": 0, "message": 0, "email": 0, "total": 0})
         
         import requests
         base_url = service.metabase_config['base_url'].rstrip('/')
@@ -914,65 +921,40 @@ def get_dashboard_counts():
             timeout=10
         )
         if auth_response.status_code != 200:
-            return jsonify({"error": "Authentication failed"}), 500
+            return jsonify({"content": 0, "message": 0, "email": 0, "total": 0})
         
         headers = {"X-Metabase-Session": auth_response.json()["id"]}
         
-        # Get all collections
-        collections_response = requests.get(f"{base_url}/api/collection", headers=headers, timeout=10)
-        if collections_response.status_code != 200:
-            return jsonify({"error": "Failed to get collections"}), 500
+        counts = {'content': 0, 'message': 0, 'email': 0, 'total': 0}
         
-        collections = collections_response.json()
-        
-        # Find _DASHBOARDS collections
-        dashboard_collections = {
-            'content': None,
-            'message': None,
-            'email': None
-        }
-        
-        for col in collections:
-            name = col.get('name', '').lower()
-            if 'content_dashboards' in name or name == 'content_dashboards':
-                dashboard_collections['content'] = col['id']
-            elif 'message_dashboards' in name or name == 'message_dashboards':
-                dashboard_collections['message'] = col['id']
-            elif 'email_dashboards' in name or name == 'email_dashboards':
-                dashboard_collections['email'] = col['id']
-        
-        # Count dashboards in each collection
-        counts = {
-            'content': 0,
-            'message': 0,
-            'email': 0,
-            'total': 0
-        }
-        
-        for db_type, col_id in dashboard_collections.items():
+        # Count dashboards in each collection using the stored IDs
+        for db_type in ['content', 'message', 'email']:
+            col_id = dashboards_collections.get(db_type)
             if col_id:
                 try:
                     items_response = requests.get(
                         f"{base_url}/api/collection/{col_id}/items",
                         headers=headers,
-                        params={"models": "dashboard"},
                         timeout=10
                     )
                     if items_response.status_code == 200:
                         items = items_response.json()
-                        # Count only dashboards
-                        dashboard_count = len([item for item in items.get('data', []) if item.get('model') == 'dashboard'])
-                        counts[db_type] = dashboard_count
+                        # Handle both list response and dict with 'data' key
+                        if isinstance(items, list):
+                            counts[db_type] = len(items)
+                        elif isinstance(items, dict) and 'data' in items:
+                            counts[db_type] = len(items['data'])
+                        elif isinstance(items, dict) and 'total' in items:
+                            counts[db_type] = items['total']
                 except Exception as e:
-                    logging.error(f"Failed to get items for {db_type}: {e}")
+                    logging.error(f"Failed to count {db_type}: {e}")
         
         counts['total'] = counts['content'] + counts['message'] + counts['email']
-        
         return jsonify(counts)
         
     except Exception as e:
         logging.error(f"Failed to get dashboard counts: {e}")
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"content": 0, "message": 0, "email": 0, "total": 0})
 
 
 @app.route('/api/config')
