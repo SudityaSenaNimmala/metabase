@@ -107,7 +107,17 @@ class MongoDBStorage:
         """Ensure MongoDB is connected, try to reconnect if not"""
         if not self.connected:
             self._connect()
-        return self.connected
+            return self.connected
+        
+        # Verify connection is still alive with a ping
+        try:
+            self.mongo_client.admin.command('ping')
+            return True
+        except Exception as e:
+            logging.warning(f"MongoDB connection lost, reconnecting... ({e})")
+            self.connected = False
+            self._connect()
+            return self.connected
     
     # =========================================================================
     # Configuration Storage
@@ -182,14 +192,18 @@ class MongoDBStorage:
     
     def add_activity_log(self, entry: dict) -> bool:
         """Add an activity log entry"""
-        if not self.connected:
+        if not self.ensure_connected():
+            logging.error(f"Cannot add activity log - MongoDB not connected")
             return False
         
         try:
-            self.db['activity_log'].insert_one(entry)
+            result = self.db['activity_log'].insert_one(entry)
+            logging.info(f"Activity log saved: {entry.get('dashboard_name', 'unknown')} - ID: {result.inserted_id}")
             return True
         except Exception as e:
             logging.error(f"Failed to add activity log: {e}")
+            import traceback
+            traceback.print_exc()
             return False
     
     def get_activity_logs(self, limit: int = 500) -> List[dict]:
@@ -320,8 +334,10 @@ class ActivityLog:
     
     def add_entry(self, entry: ActivityLogEntry):
         """Add a new entry to the log"""
-        self.storage.add_activity_log(asdict(entry))
-        logging.debug(f"Saved entry to MongoDB: {entry.dashboard_name}")
+        success = self.storage.add_activity_log(asdict(entry))
+        if not success:
+            logging.error(f"FAILED to save activity log for: {entry.dashboard_name}")
+        return success
     
     def get_entries(self, limit: int = 500) -> List[dict]:
         """Get log entries as dictionaries"""
