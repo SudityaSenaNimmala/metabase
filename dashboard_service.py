@@ -18,6 +18,10 @@ from typing import Dict, List, Optional, Set
 from dataclasses import dataclass, asdict
 import requests
 
+# Load environment variables from .env file
+from dotenv import load_dotenv
+load_dotenv()
+
 # Fix Windows console encoding
 if sys.platform == 'win32':
     try:
@@ -91,6 +95,21 @@ class MongoDBStorage:
             
             # Config indexes
             self.db['config'].create_index([('key', 1)], unique=True)
+            
+            # User indexes
+            self.db['users'].create_index([('id', 1)], unique=True)
+            self.db['users'].create_index([('email', 1)], unique=True)
+            
+            # Session indexes
+            self.db['sessions'].create_index([('session_id', 1)], unique=True)
+            self.db['sessions'].create_index([('user_id', 1)])
+            self.db['sessions'].create_index([('expires_at', 1)])
+            
+            # Merged dashboards indexes
+            self.db['merged_dashboards'].create_index([('id', 1)], unique=True)
+            self.db['merged_dashboards'].create_index([('created_by.id', 1)])
+            self.db['merged_dashboards'].create_index([('type', 1)])
+            self.db['merged_dashboards'].create_index([('created_at', -1)])
             
             logging.info("MongoDB indexes created")
         except Exception as e:
@@ -312,6 +331,219 @@ class MongoDBStorage:
             'databases_with_dashboards': {},
             'databases_without_dashboards': {}
         })
+    
+    # =========================================================================
+    # User Authentication Storage
+    # =========================================================================
+    
+    def create_or_update_user(self, user_data: dict) -> bool:
+        """Create or update a user on login"""
+        if not self.ensure_connected():
+            logging.error("Cannot create/update user - MongoDB not connected")
+            return False
+        
+        try:
+            user_id = user_data.get('id')
+            now = datetime.utcnow().isoformat() + 'Z'
+            
+            # Check if user exists
+            existing = self.db['users'].find_one({'id': user_id})
+            
+            if existing:
+                # Update last login
+                self.db['users'].update_one(
+                    {'id': user_id},
+                    {'$set': {
+                        'name': user_data.get('name'),
+                        'email': user_data.get('email'),
+                        'last_login': now
+                    }}
+                )
+            else:
+                # Create new user
+                user_data['first_login'] = now
+                user_data['last_login'] = now
+                self.db['users'].insert_one(user_data)
+            
+            logging.info(f"User logged in: {user_data.get('email')}")
+            return True
+        except Exception as e:
+            logging.error(f"Failed to create/update user: {e}")
+            return False
+    
+    def get_user(self, user_id: str) -> Optional[dict]:
+        """Get user by ID"""
+        if not self.ensure_connected():
+            return None
+        
+        try:
+            doc = self.db['users'].find_one({'id': user_id})
+            if doc:
+                doc.pop('_id', None)
+            return doc
+        except Exception as e:
+            logging.error(f"Failed to get user: {e}")
+            return None
+    
+    def create_session(self, user_id: str, user_email: str, user_name: str) -> Optional[str]:
+        """Create a new session for a user"""
+        if not self.ensure_connected():
+            return None
+        
+        try:
+            import uuid
+            session_id = str(uuid.uuid4())
+            now = datetime.utcnow()
+            expires = now + timedelta(days=7)  # Session expires in 7 days
+            
+            session_doc = {
+                'session_id': session_id,
+                'user_id': user_id,
+                'user_email': user_email,
+                'user_name': user_name,
+                'created_at': now.isoformat() + 'Z',
+                'expires_at': expires.isoformat() + 'Z'
+            }
+            
+            self.db['sessions'].insert_one(session_doc)
+            logging.info(f"Session created for user: {user_email}")
+            return session_id
+        except Exception as e:
+            logging.error(f"Failed to create session: {e}")
+            return None
+    
+    def get_session(self, session_id: str) -> Optional[dict]:
+        """Get and validate a session"""
+        if not self.ensure_connected():
+            return None
+        
+        try:
+            doc = self.db['sessions'].find_one({'session_id': session_id})
+            if not doc:
+                return None
+            
+            # Check if expired
+            expires_at = doc.get('expires_at', '')
+            if expires_at:
+                expires = datetime.fromisoformat(expires_at.rstrip('Z'))
+                if datetime.utcnow() > expires:
+                    # Session expired, delete it
+                    self.db['sessions'].delete_one({'session_id': session_id})
+                    return None
+            
+            doc.pop('_id', None)
+            return doc
+        except Exception as e:
+            logging.error(f"Failed to get session: {e}")
+            return None
+    
+    def delete_session(self, session_id: str) -> bool:
+        """Delete a session (logout)"""
+        if not self.ensure_connected():
+            return False
+        
+        try:
+            self.db['sessions'].delete_one({'session_id': session_id})
+            return True
+        except Exception as e:
+            logging.error(f"Failed to delete session: {e}")
+            return False
+    
+    def cleanup_expired_sessions(self):
+        """Remove expired sessions"""
+        if not self.ensure_connected():
+            return
+        
+        try:
+            now = datetime.utcnow().isoformat() + 'Z'
+            result = self.db['sessions'].delete_many({
+                'expires_at': {'$lt': now}
+            })
+            if result.deleted_count > 0:
+                logging.info(f"Cleaned up {result.deleted_count} expired sessions")
+        except Exception as e:
+            logging.error(f"Failed to cleanup sessions: {e}")
+    
+    # =========================================================================
+    # Merged Dashboards Storage
+    # =========================================================================
+    
+    def save_merged_dashboard(self, data: dict) -> Optional[str]:
+        """Save a new merged dashboard configuration"""
+        if not self.ensure_connected():
+            logging.error("Cannot save merged dashboard - MongoDB not connected")
+            return None
+        
+        try:
+            import uuid
+            dashboard_id = str(uuid.uuid4())
+            now = datetime.utcnow().isoformat() + 'Z'
+            
+            doc = {
+                'id': dashboard_id,
+                'name': data.get('name', 'Unnamed Merged Dashboard'),
+                'type': data.get('type'),  # content, message, or email
+                'source_dashboards': data.get('source_dashboards', []),
+                'created_by': data.get('created_by', {}),
+                'created_at': now,
+                'updated_at': now
+            }
+            
+            self.db['merged_dashboards'].insert_one(doc)
+            logging.info(f"Merged dashboard created: {doc['name']} (ID: {dashboard_id})")
+            return dashboard_id
+        except Exception as e:
+            logging.error(f"Failed to save merged dashboard: {e}")
+            return None
+    
+    def get_merged_dashboards(self, user_id: str = None) -> List[dict]:
+        """Get all merged dashboards, optionally filtered by user"""
+        if not self.ensure_connected():
+            return []
+        
+        try:
+            query = {}
+            if user_id:
+                query['created_by.id'] = user_id
+            
+            cursor = self.db['merged_dashboards'].find(query).sort('created_at', -1)
+            dashboards = []
+            for doc in cursor:
+                doc.pop('_id', None)
+                dashboards.append(doc)
+            return dashboards
+        except Exception as e:
+            logging.error(f"Failed to get merged dashboards: {e}")
+            return []
+    
+    def get_merged_dashboard(self, dashboard_id: str) -> Optional[dict]:
+        """Get a single merged dashboard by ID"""
+        if not self.ensure_connected():
+            return None
+        
+        try:
+            doc = self.db['merged_dashboards'].find_one({'id': dashboard_id})
+            if doc:
+                doc.pop('_id', None)
+            return doc
+        except Exception as e:
+            logging.error(f"Failed to get merged dashboard: {e}")
+            return None
+    
+    def delete_merged_dashboard(self, dashboard_id: str) -> bool:
+        """Delete a merged dashboard"""
+        if not self.ensure_connected():
+            return False
+        
+        try:
+            result = self.db['merged_dashboards'].delete_one({'id': dashboard_id})
+            if result.deleted_count > 0:
+                logging.info(f"Merged dashboard deleted: {dashboard_id}")
+                return True
+            return False
+        except Exception as e:
+            logging.error(f"Failed to delete merged dashboard: {e}")
+            return False
 
 
 # Global MongoDB storage instance
@@ -856,11 +1088,202 @@ class DashboardService:
 # =============================================================================
 
 app = Flask(__name__)
-CORS(app)
+CORS(app, supports_credentials=True)
+
+# Session secret key for Flask sessions
+app.secret_key = os.environ.get('SESSION_SECRET_KEY', 'dev-secret-key-change-in-production')
 
 # Global service instance
 service = DashboardService()
 scheduler = BackgroundScheduler()
+
+# =============================================================================
+# Microsoft OAuth Authentication
+# =============================================================================
+
+import msal
+import uuid
+
+# OAuth Configuration
+MICROSOFT_CLIENT_ID = os.environ.get('MICROSOFT_CLIENT_ID', '')
+MICROSOFT_CLIENT_SECRET = os.environ.get('MICROSOFT_CLIENT_SECRET', '')
+MICROSOFT_TENANT_ID = os.environ.get('MICROSOFT_TENANT_ID', '')
+ALLOWED_EMAIL_DOMAIN = os.environ.get('ALLOWED_EMAIL_DOMAIN', '')
+
+# Microsoft OAuth endpoints
+AUTHORITY = f"https://login.microsoftonline.com/{MICROSOFT_TENANT_ID}" if MICROSOFT_TENANT_ID else ""
+REDIRECT_PATH = "/api/auth/callback"
+SCOPE = ["User.Read"]
+
+def get_msal_app():
+    """Create MSAL confidential client application"""
+    if not MICROSOFT_CLIENT_ID or not MICROSOFT_CLIENT_SECRET or not MICROSOFT_TENANT_ID:
+        return None
+    return msal.ConfidentialClientApplication(
+        MICROSOFT_CLIENT_ID,
+        authority=AUTHORITY,
+        client_credential=MICROSOFT_CLIENT_SECRET
+    )
+
+def get_current_user():
+    """Get current user from session cookie"""
+    from flask import request
+    session_id = request.cookies.get('session_id')
+    if not session_id:
+        return None
+    session = mongo_storage.get_session(session_id)
+    if not session:
+        return None
+    return {
+        'id': session.get('user_id'),
+        'email': session.get('user_email'),
+        'name': session.get('user_name')
+    }
+
+def require_auth(f):
+    """Decorator to require authentication for routes"""
+    from functools import wraps
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        user = get_current_user()
+        if not user:
+            return jsonify({"error": "Authentication required"}), 401
+        return f(*args, **kwargs)
+    return decorated
+
+@app.route('/api/auth/status')
+def auth_status():
+    """Check if authentication is configured and user's login status"""
+    auth_configured = bool(MICROSOFT_CLIENT_ID and MICROSOFT_CLIENT_SECRET and MICROSOFT_TENANT_ID)
+    user = get_current_user()
+    return jsonify({
+        "auth_configured": auth_configured,
+        "authenticated": user is not None,
+        "user": user,
+        "allowed_domain": ALLOWED_EMAIL_DOMAIN if auth_configured else None
+    })
+
+@app.route('/api/auth/login')
+def auth_login():
+    """Start Microsoft OAuth login flow"""
+    msal_app = get_msal_app()
+    if not msal_app:
+        return jsonify({"error": "OAuth not configured. Set MICROSOFT_CLIENT_ID, MICROSOFT_CLIENT_SECRET, and MICROSOFT_TENANT_ID environment variables."}), 500
+    
+    # Get the redirect URI from the request
+    redirect_uri = request.url_root.rstrip('/') + REDIRECT_PATH
+    
+    # Generate auth URL
+    auth_url = msal_app.get_authorization_request_url(
+        SCOPE,
+        redirect_uri=redirect_uri,
+        state=str(uuid.uuid4())
+    )
+    
+    return jsonify({"auth_url": auth_url})
+
+@app.route('/api/auth/callback')
+def auth_callback():
+    """Handle OAuth callback from Microsoft"""
+    from flask import redirect, make_response
+    
+    msal_app = get_msal_app()
+    if not msal_app:
+        return redirect('/?error=oauth_not_configured')
+    
+    # Get authorization code from query params
+    code = request.args.get('code')
+    if not code:
+        error = request.args.get('error', 'unknown_error')
+        error_desc = request.args.get('error_description', 'No authorization code received')
+        logging.error(f"OAuth error: {error} - {error_desc}")
+        return redirect(f'/?error={error}')
+    
+    # Get redirect URI (must match the one used in login)
+    redirect_uri = request.url_root.rstrip('/') + REDIRECT_PATH
+    
+    try:
+        # Exchange code for token
+        result = msal_app.acquire_token_by_authorization_code(
+            code,
+            scopes=SCOPE,
+            redirect_uri=redirect_uri
+        )
+        
+        if 'error' in result:
+            logging.error(f"Token error: {result.get('error')} - {result.get('error_description')}")
+            return redirect(f"/?error={result.get('error')}")
+        
+        # Get user info from token claims
+        id_token_claims = result.get('id_token_claims', {})
+        user_email = id_token_claims.get('preferred_username', '') or id_token_claims.get('email', '')
+        user_name = id_token_claims.get('name', '')
+        user_id = id_token_claims.get('oid', '') or id_token_claims.get('sub', '')
+        
+        if not user_email:
+            logging.error("No email in token claims")
+            return redirect('/?error=no_email')
+        
+        # Validate email domain
+        if ALLOWED_EMAIL_DOMAIN:
+            email_domain = user_email.split('@')[-1].lower()
+            if email_domain != ALLOWED_EMAIL_DOMAIN.lower():
+                logging.warning(f"Access denied for domain: {email_domain} (allowed: {ALLOWED_EMAIL_DOMAIN})")
+                return redirect(f'/?error=domain_not_allowed&domain={email_domain}')
+        
+        # Create or update user in MongoDB
+        user_data = {
+            'id': user_id,
+            'email': user_email,
+            'name': user_name
+        }
+        mongo_storage.create_or_update_user(user_data)
+        
+        # Create session
+        session_id = mongo_storage.create_session(user_id, user_email, user_name)
+        if not session_id:
+            return redirect('/?error=session_creation_failed')
+        
+        # Set session cookie and redirect to home
+        response = make_response(redirect('/'))
+        response.set_cookie(
+            'session_id',
+            session_id,
+            httponly=True,
+            secure=request.is_secure,
+            samesite='Lax',
+            max_age=7 * 24 * 60 * 60  # 7 days
+        )
+        
+        logging.info(f"User logged in successfully: {user_email}")
+        return response
+        
+    except Exception as e:
+        logging.error(f"OAuth callback error: {e}")
+        import traceback
+        traceback.print_exc()
+        return redirect(f'/?error=callback_failed')
+
+@app.route('/api/auth/logout', methods=['POST'])
+def auth_logout():
+    """Logout user by deleting session"""
+    from flask import make_response
+    
+    session_id = request.cookies.get('session_id')
+    if session_id:
+        mongo_storage.delete_session(session_id)
+    
+    response = make_response(jsonify({"success": True}))
+    response.delete_cookie('session_id')
+    return response
+
+@app.route('/api/auth/me')
+def auth_me():
+    """Get current user info"""
+    user = get_current_user()
+    if not user:
+        return jsonify({"error": "Not authenticated"}), 401
+    return jsonify(user)
 
 
 def scheduled_job():
@@ -1301,6 +1724,693 @@ def mongodb_status():
 
 
 # =============================================================================
+# Merged Dashboards API
+# =============================================================================
+
+@app.route('/api/merged-dashboards', methods=['GET'])
+@require_auth
+def get_merged_dashboards():
+    """Get all merged dashboards"""
+    try:
+        dashboards = mongo_storage.get_merged_dashboards()
+        return jsonify({
+            "success": True,
+            "dashboards": dashboards,
+            "count": len(dashboards)
+        })
+    except Exception as e:
+        logging.error(f"Failed to get merged dashboards: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route('/api/merged-dashboards', methods=['POST'])
+@require_auth
+def create_merged_dashboard():
+    """Create a new merged dashboard"""
+    try:
+        data = request.get_json()
+        
+        if not data:
+            return jsonify({"success": False, "error": "No data provided"}), 400
+        
+        if not data.get('name'):
+            return jsonify({"success": False, "error": "Name is required"}), 400
+        
+        if not data.get('type') or data['type'] not in ['content', 'message', 'email']:
+            return jsonify({"success": False, "error": "Valid type (content, message, email) is required"}), 400
+        
+        if not data.get('source_dashboards') or len(data['source_dashboards']) < 2:
+            return jsonify({"success": False, "error": "At least 2 source dashboards are required"}), 400
+        
+        # Get current user
+        user = get_current_user()
+        if user:
+            data['created_by'] = {
+                'id': user.get('id'),
+                'email': user.get('email'),
+                'name': user.get('name')
+            }
+        
+        dashboard_id = mongo_storage.save_merged_dashboard(data)
+        
+        if dashboard_id:
+            return jsonify({
+                "success": True,
+                "id": dashboard_id,
+                "message": "Merged dashboard created successfully"
+            })
+        else:
+            return jsonify({"success": False, "error": "Failed to save merged dashboard"}), 500
+            
+    except Exception as e:
+        logging.error(f"Failed to create merged dashboard: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route('/api/merged-dashboards/<dashboard_id>', methods=['GET'])
+@require_auth
+def get_merged_dashboard(dashboard_id):
+    """Get a single merged dashboard by ID"""
+    try:
+        dashboard = mongo_storage.get_merged_dashboard(dashboard_id)
+        
+        if not dashboard:
+            return jsonify({"success": False, "error": "Dashboard not found"}), 404
+        
+        return jsonify({
+            "success": True,
+            "dashboard": dashboard
+        })
+    except Exception as e:
+        logging.error(f"Failed to get merged dashboard: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route('/api/merged-dashboards/<dashboard_id>', methods=['DELETE'])
+@require_auth
+def delete_merged_dashboard(dashboard_id):
+    """Delete a merged dashboard"""
+    try:
+        success = mongo_storage.delete_merged_dashboard(dashboard_id)
+        
+        if success:
+            return jsonify({
+                "success": True,
+                "message": "Merged dashboard deleted successfully"
+            })
+        else:
+            return jsonify({"success": False, "error": "Dashboard not found or could not be deleted"}), 404
+            
+    except Exception as e:
+        logging.error(f"Failed to delete merged dashboard: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route('/api/analyze-dashboard/<int:dashboard_id>')
+def analyze_dashboard(dashboard_id):
+    """Analyze complete dashboard structure - tabs, cards, filters, click behaviors, etc."""
+    try:
+        if not service.metabase_config:
+            return jsonify({"error": "Metabase not configured"}), 500
+        
+        base_url = service.metabase_config['base_url'].rstrip('/')
+        
+        # Authenticate
+        auth_response = requests.post(
+            f"{base_url}/api/session",
+            json={
+                "username": service.metabase_config['username'],
+                "password": service.metabase_config['password']
+            },
+            timeout=10
+        )
+        if auth_response.status_code != 200:
+            return jsonify({"error": "Auth failed"}), 500
+        
+        headers = {"X-Metabase-Session": auth_response.json()["id"]}
+        
+        # Get full dashboard
+        dash_response = requests.get(
+            f"{base_url}/api/dashboard/{dashboard_id}",
+            headers=headers,
+            timeout=30
+        )
+        if dash_response.status_code != 200:
+            return jsonify({"error": "Dashboard fetch failed"}), 500
+        
+        dash = dash_response.json()
+        
+        # Extract complete structure
+        analysis = {
+            "dashboard": {
+                "id": dash.get('id'),
+                "name": dash.get('name'),
+                "description": dash.get('description'),
+                "collection_id": dash.get('collection_id'),
+            },
+            "tabs": [],
+            "parameters": [],  # Dashboard filters
+            "cards": [],
+            "click_behaviors": [],
+        }
+        
+        # Tabs
+        for tab in dash.get('tabs', []):
+            analysis["tabs"].append({
+                "id": tab.get('id'),
+                "name": tab.get('name'),
+                "position": tab.get('position')
+            })
+        
+        # Parameters (filters)
+        for param in dash.get('parameters', []):
+            analysis["parameters"].append({
+                "id": param.get('id'),
+                "name": param.get('name'),
+                "slug": param.get('slug'),
+                "type": param.get('type'),
+                "default": param.get('default'),
+            })
+        
+        # Cards with full detail
+        for dc in dash.get('dashcards', []):
+            card = dc.get('card', {})
+            if not card:
+                continue
+                
+            card_info = {
+                "dashcard_id": dc.get('id'),
+                "card_id": card.get('id'),
+                "name": card.get('name'),
+                "display": card.get('display'),
+                "description": card.get('description'),
+                "position": {
+                    "row": dc.get('row'),
+                    "col": dc.get('col'),
+                    "size_x": dc.get('size_x'),
+                    "size_y": dc.get('size_y'),
+                },
+                "dashboard_tab_id": dc.get('dashboard_tab_id'),
+                "visualization_settings": dc.get('visualization_settings', {}),
+                "parameter_mappings": dc.get('parameter_mappings', []),
+            }
+            
+            # Click behavior
+            viz_settings = dc.get('visualization_settings', {})
+            click_behavior = viz_settings.get('click_behavior', {})
+            if click_behavior:
+                card_info["click_behavior"] = {
+                    "type": click_behavior.get('type'),
+                    "linkType": click_behavior.get('linkType'),
+                    "targetId": click_behavior.get('targetId'),
+                    "parameterMapping": click_behavior.get('parameterMapping', {}),
+                }
+                analysis["click_behaviors"].append({
+                    "card_name": card.get('name'),
+                    "behavior": card_info["click_behavior"]
+                })
+            
+            # Query details
+            if card.get('dataset_query'):
+                dq = card.get('dataset_query', {})
+                card_info["query"] = {
+                    "type": dq.get('type'),
+                    "database": dq.get('database'),
+                }
+                if dq.get('native'):
+                    card_info["query"]["native"] = True
+                if dq.get('query'):
+                    card_info["query"]["source_table"] = dq.get('query', {}).get('source-table')
+            
+            # Result metadata (column info)
+            if card.get('result_metadata'):
+                card_info["columns"] = [
+                    {"name": col.get('name'), "display_name": col.get('display_name'), "base_type": col.get('base_type')}
+                    for col in card.get('result_metadata', [])
+                ]
+            
+            analysis["cards"].append(card_info)
+        
+        # Summary
+        analysis["summary"] = {
+            "total_tabs": len(analysis["tabs"]),
+            "total_cards": len(analysis["cards"]),
+            "total_parameters": len(analysis["parameters"]),
+            "cards_with_click_behavior": len(analysis["click_behaviors"]),
+            "display_types": list(set(c.get('display') for c in analysis["cards"] if c.get('display'))),
+        }
+        
+        return jsonify(analysis)
+        
+    except Exception as e:
+        import traceback
+        return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
+
+
+@app.route('/api/merged-dashboard-data/<dashboard_id>')
+@require_auth
+def get_merged_dashboard_data(dashboard_id):
+    """Fetch and aggregate real-time data from source dashboards using dashboard card query API"""
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    import time
+    
+    try:
+        # Get filter parameters from query string
+        filter_params = {}
+        for key, value in request.args.items():
+            if value and value.strip():  # Only include non-empty values
+                filter_params[key] = value.strip()
+        
+        logging.info(f"Merged dashboard request with filters: {filter_params}")
+        
+        # Get the merged dashboard config
+        merged_dashboard = mongo_storage.get_merged_dashboard(dashboard_id)
+        if not merged_dashboard:
+            return jsonify({"success": False, "error": "Merged dashboard not found"}), 404
+        
+        source_dashboards = merged_dashboard.get('source_dashboards', [])
+        if not source_dashboards:
+            return jsonify({"success": False, "error": "No source dashboards configured"}), 400
+        
+        # Check Metabase config
+        if not service.metabase_config:
+            return jsonify({"success": False, "error": "Metabase not configured"}), 500
+        
+        base_url = service.metabase_config['base_url'].rstrip('/')
+        
+        # Authenticate with Metabase
+        auth_response = requests.post(
+            f"{base_url}/api/session",
+            json={
+                "username": service.metabase_config['username'],
+                "password": service.metabase_config['password']
+            },
+            timeout=10
+        )
+        if auth_response.status_code != 200:
+            return jsonify({"success": False, "error": "Metabase authentication failed"}), 500
+        
+        headers = {"X-Metabase-Session": auth_response.json()["id"]}
+        
+        # Fetch all dashboard data
+        all_dashboard_data = []
+        card_structure = None
+        tabs_structure = None  # Store tabs from first dashboard
+        
+        for source in source_dashboards:
+            source_id = source.get('id')
+            try:
+                # Get dashboard details first
+                dash_response = requests.get(
+                    f"{base_url}/api/dashboard/{source_id}",
+                    headers=headers,
+                    timeout=30
+                )
+                if dash_response.status_code != 200:
+                    logging.warning(f"Failed to fetch dashboard {source_id}: status {dash_response.status_code}")
+                    continue
+                
+                dash_data = dash_response.json()
+                dashcards = dash_data.get('dashcards', []) or dash_data.get('ordered_cards', [])
+                
+                # Store tabs structure from first dashboard
+                if tabs_structure is None:
+                    tabs_structure = dash_data.get('tabs', [])
+                
+                # Store parameters structure from first dashboard
+                if 'parameters_structure' not in locals():
+                    parameters_structure = []
+                    for param in dash_data.get('parameters', []):
+                        parameters_structure.append({
+                            'id': param.get('id'),
+                            'name': param.get('name'),
+                            'slug': param.get('slug'),
+                            'type': param.get('type'),
+                            'default': param.get('default')
+                        })
+                
+                # Filter to only cards with actual questions
+                question_cards = []
+                for dc in dashcards:
+                    card = dc.get('card', {})
+                    if card and card.get('id'):
+                        question_cards.append(dc)
+                
+                logging.info(f"Dashboard {source_id} ({source.get('name')}) has {len(question_cards)} question cards")
+                
+                # Store structure from first dashboard
+                if card_structure is None:
+                    card_structure = []
+                    for idx, dc in enumerate(question_cards):
+                        card = dc.get('card', {})
+                        viz_settings = dc.get('visualization_settings', {})
+                        card_structure.append({
+                            'index': idx,
+                            'dashcard_id': dc.get('id'),
+                            'card_id': card.get('id'),
+                            'name': card.get('name', 'Unnamed'),
+                            'display': card.get('display', 'table'),
+                            'visualization_settings': viz_settings,
+                            'dashboard_tab_id': dc.get('dashboard_tab_id'),
+                            'row': dc.get('row', 0),
+                            'col': dc.get('col', 0),
+                            'size_x': dc.get('size_x', 4),
+                            'size_y': dc.get('size_y', 4),
+                            'click_behavior': viz_settings.get('click_behavior'),
+                            'parameter_mappings': dc.get('parameter_mappings', []),
+                            'columns': card.get('result_metadata', [])
+                        })
+                
+                # Build parameter values for the query based on filter_params
+                # Map filter_params to actual dashboard parameter IDs
+                # Store the parameter mapping for use with each dashcard
+                dash_params = dash_data.get('parameters', [])
+                param_values_by_id = {}  # param_id -> filter_value
+                
+                for param in dash_params:
+                    param_slug = param.get('slug', '')
+                    param_name = param.get('name', '')
+                    param_id = param.get('id')
+                    
+                    # Check if we have a filter value for this parameter
+                    for filter_key, filter_value in filter_params.items():
+                        filter_key_lower = filter_key.lower().replace('_', '').replace('-', '').replace(' ', '')
+                        slug_lower = param_slug.lower().replace('_', '').replace('-', '').replace(' ', '')
+                        name_lower = param_name.lower().replace('_', '').replace('-', '').replace(' ', '')
+                        
+                        if (filter_key_lower == slug_lower or 
+                            filter_key_lower == name_lower or 
+                            filter_key_lower in slug_lower or 
+                            filter_key_lower in name_lower or
+                            slug_lower in filter_key_lower or
+                            name_lower in filter_key_lower):
+                            param_values_by_id[param_id] = filter_value
+                            logging.info(f"  Mapped filter '{filter_key}' to param '{param_slug}' (id: {param_id})")
+                            break
+                
+                # Fetch card data using dashcard query endpoint with proper async handling
+                dashboard_cards_data = {}
+                for idx, dc in enumerate(question_cards):
+                    dashcard_id = dc.get('id')
+                    card = dc.get('card', {})
+                    card_id = card.get('id')
+                    
+                    try:
+                        # Use the dashcard query endpoint
+                        query_url = f"{base_url}/api/dashboard/{source_id}/dashcard/{dashcard_id}/card/{card_id}/query"
+                        
+                        # Build query params for THIS specific dashcard using its parameter_mappings
+                        # Each dashcard has its own parameter_mappings that specify how dashboard params map to card fields
+                        query_params = []
+                        param_mappings = dc.get('parameter_mappings', [])
+                        
+                        for mapping in param_mappings:
+                            param_id = mapping.get('parameter_id')
+                            target = mapping.get('target')
+                            
+                            if param_id in param_values_by_id and target:
+                                query_params.append({
+                                    "id": param_id,
+                                    "target": target,
+                                    "value": param_values_by_id[param_id]
+                                })
+                                logging.info(f"    Card {idx}: Adding param {param_id} with target {target}")
+                        
+                        # Build query body with parameters if any
+                        query_body = {"parameters": query_params} if query_params else {}
+                        
+                        # Query the card - accept both 200 and 202 (202 still contains data!)
+                        card_response = requests.post(
+                            query_url,
+                            headers=headers,
+                            json=query_body,
+                            timeout=60
+                        )
+                        
+                        # Metabase returns 202 for async queries BUT still includes the data!
+                        if card_response.status_code in [200, 202]:
+                            result = card_response.json()
+                            data = result.get('data', {})
+                            rows = data.get('rows', [])
+                            
+                            if data:
+                                dashboard_cards_data[idx] = {
+                                    'data': data,
+                                    'display': card.get('display', 'table'),
+                                    'name': card.get('name', 'Unnamed')
+                                }
+                                logging.info(f"  Got data for card {idx}: {card.get('name')} - {len(rows)} rows (status {card_response.status_code})")
+                            else:
+                                logging.warning(f"  Card {idx} ({card.get('name')}) returned empty data")
+                        else:
+                            logging.warning(f"  Card {idx} query failed: status {card_response.status_code}")
+                    except Exception as e:
+                        logging.warning(f"  Error fetching card {card_id}: {e}")
+                
+                all_dashboard_data.append({
+                    'source_id': source_id,
+                    'source_name': source.get('name', f'Dashboard {source_id}'),
+                    'cards_data': dashboard_cards_data
+                })
+                logging.info(f"  Collected {len(dashboard_cards_data)} cards from dashboard {source_id}")
+                
+            except Exception as e:
+                logging.warning(f"Failed to process dashboard {source_id}: {e}")
+                import traceback
+                traceback.print_exc()
+        
+        if not all_dashboard_data:
+            return jsonify({"success": False, "error": "Could not fetch data from any source dashboard"}), 500
+        
+        logging.info(f"Card structure has {len(card_structure) if card_structure else 0} cards")
+        logging.info(f"Tabs structure: {tabs_structure}")
+        
+        # Aggregate the data by index
+        aggregated_cards = aggregate_dashboard_data_by_index(card_structure, all_dashboard_data)
+        
+        return jsonify({
+            "success": True,
+            "merged_dashboard": {
+                "id": dashboard_id,
+                "name": merged_dashboard.get('name'),
+                "type": merged_dashboard.get('type'),
+                "source_count": len(source_dashboards),
+                "sources": [{"id": s.get('id'), "name": s.get('name')} for s in source_dashboards],
+                "tabs": tabs_structure or [],
+                "parameters": parameters_structure if 'parameters_structure' in locals() else [],
+                "cards": aggregated_cards
+            }
+        })
+        
+    except Exception as e:
+        logging.error(f"Failed to get merged dashboard data: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+def aggregate_dashboard_data_by_index(card_structure, all_dashboard_data):
+    """
+    Aggregate data from multiple dashboards based on visualization type.
+    Cards are matched by their INDEX position (since cloned dashboards have same structure).
+    - Scalar/Number: Sum values
+    - Table: Union rows
+    - Charts: Merge data series
+    """
+    if not card_structure:
+        logging.warning("No card structure to aggregate")
+        return []
+    
+    aggregated_cards = []
+    
+    for card_info in card_structure:
+        card_index = card_info['index']
+        display_type = card_info.get('display', 'table')
+        
+        # Collect data for this card from all sources BY INDEX
+        card_data_list = []
+        for dash_data in all_dashboard_data:
+            cards_data = dash_data.get('cards_data', {})
+            if card_index in cards_data:
+                card_data_list.append({
+                    'source': dash_data.get('source_name'),
+                    'data': cards_data[card_index].get('data', {})
+                })
+        
+        if not card_data_list:
+            logging.warning(f"No data found for card index {card_index}")
+            continue
+        
+        # Aggregate based on display type
+        aggregated_data = None
+        
+        if display_type in ['scalar', 'number', 'progress']:
+            # Sum scalar values
+            aggregated_data = aggregate_scalar(card_data_list)
+        elif display_type == 'table':
+            # Union table rows
+            aggregated_data = aggregate_table(card_data_list)
+        elif display_type in ['bar', 'line', 'area', 'pie', 'row', 'combo']:
+            # Merge chart data
+            aggregated_data = aggregate_chart(card_data_list)
+        else:
+            # Default: use first source's data
+            if card_data_list:
+                aggregated_data = card_data_list[0].get('data')
+        
+        aggregated_cards.append({
+            'index': card_index,
+            'name': card_info.get('name'),
+            'display': display_type,
+            'visualization_settings': card_info.get('visualization_settings', {}),
+            'dashboard_tab_id': card_info.get('dashboard_tab_id'),
+            'row': card_info.get('row', 0),
+            'col': card_info.get('col', 0),
+            'size_x': card_info.get('size_x', 4),
+            'size_y': card_info.get('size_y', 4),
+            'click_behavior': card_info.get('click_behavior'),
+            'columns': card_info.get('columns', []),
+            'data': aggregated_data,
+            'source_count': len(card_data_list)
+        })
+    
+    return aggregated_cards
+
+
+def aggregate_scalar(card_data_list):
+    """Sum scalar values from multiple sources"""
+    total = 0
+    cols = None
+    
+    for item in card_data_list:
+        data = item.get('data', {})
+        rows = data.get('rows', [])
+        
+        if cols is None:
+            cols = data.get('cols', [])
+        
+        logging.info(f"  Scalar aggregation - source: {item.get('source')}, rows: {rows}")
+        
+        if rows and len(rows) > 0:
+            try:
+                row = rows[0]
+                # Find the numeric value - it might be in any column
+                # Usually it's the last column (index -1) or the second column (index 1)
+                value = None
+                
+                # Try last column first (most common for scalar queries)
+                if len(row) > 0:
+                    last_val = row[-1]
+                    if isinstance(last_val, (int, float)) and last_val is not None:
+                        value = last_val
+                    # Also check first column if it's numeric
+                    elif isinstance(row[0], (int, float)) and row[0] is not None:
+                        value = row[0]
+                
+                logging.info(f"    Extracted value: {value}")
+                
+                if value is not None:
+                    total += value
+            except (IndexError, TypeError) as e:
+                logging.warning(f"    Error extracting value: {e}")
+    
+    logging.info(f"  Scalar total: {total}")
+    
+    return {
+        'cols': cols or [{'name': 'value', 'display_name': 'Value', 'base_type': 'type/Integer'}],
+        'rows': [[total]],
+        'native_form': {'query': 'Aggregated from multiple sources'}
+    }
+
+
+def aggregate_table(card_data_list):
+    """Union table rows from multiple sources"""
+    all_rows = []
+    cols = None
+    
+    for item in card_data_list:
+        data = item.get('data', {})
+        rows = data.get('rows', [])
+        
+        if cols is None:
+            cols = data.get('cols', [])
+        
+        # Add source column to identify where data came from
+        for row in rows:
+            all_rows.append(row)
+    
+    return {
+        'cols': cols or [],
+        'rows': all_rows,
+        'native_form': {'query': 'Aggregated from multiple sources'}
+    }
+
+
+def aggregate_chart(card_data_list):
+    """
+    Merge chart data series - sum values for the same category/label.
+    For pie/bar charts: rows are typically [label, value] - we sum values with same label.
+    For line charts: rows are typically [date, value] - we sum values for same date.
+    """
+    cols = None
+    
+    # Dictionary to aggregate values by label/category (first column)
+    aggregated = {}
+    
+    for item in card_data_list:
+        data = item.get('data', {})
+        rows = data.get('rows', [])
+        
+        if cols is None:
+            cols = data.get('cols', [])
+        
+        for row in rows:
+            if not row or len(row) < 2:
+                continue
+            
+            # First column is the label/category, rest are values
+            label = row[0]
+            if label is None:
+                label = 'Unknown'
+            
+            # Convert label to string for consistent keys
+            label_key = str(label)
+            
+            if label_key not in aggregated:
+                # Initialize with zeros for all value columns
+                aggregated[label_key] = {
+                    'label': label,
+                    'values': [0] * (len(row) - 1)
+                }
+            
+            # Sum all value columns (everything after the first column)
+            for i in range(1, len(row)):
+                val = row[i]
+                if isinstance(val, (int, float)) and val is not None:
+                    aggregated[label_key]['values'][i-1] += val
+    
+    # Convert back to rows format
+    merged_rows = []
+    for label_key, data in aggregated.items():
+        merged_row = [data['label']] + data['values']
+        merged_rows.append(merged_row)
+    
+    # Sort by first column (label) if possible
+    try:
+        merged_rows.sort(key=lambda x: str(x[0]) if x else '')
+    except:
+        pass
+    
+    logging.info(f"  Chart aggregation: {len(card_data_list)} sources -> {len(merged_rows)} unique categories")
+    
+    return {
+        'cols': cols or [],
+        'rows': merged_rows,
+        'native_form': {'query': 'Aggregated from multiple sources'}
+    }
+
+
+# =============================================================================
 # Main
 # =============================================================================
 
@@ -1352,6 +2462,213 @@ def main():
     except KeyboardInterrupt:
         scheduler.shutdown()
         print("\nService stopped.")
+
+
+@app.route('/api/drill-through', methods=['POST'])
+@require_auth
+def drill_through():
+    """
+    Fetch drill-through data from a target dashboard or question.
+    This replicates Metabase's click behavior by fetching data from the target
+    with the appropriate filter parameters applied.
+    """
+    try:
+        data = request.json
+        target_type = data.get('targetType', 'dashboard')  # 'dashboard' or 'question'
+        target_id = data.get('targetId')
+        filter_params = data.get('filterParams', {})  # {paramName: value}
+        
+        if not target_id:
+            return jsonify({"success": False, "error": "targetId is required"}), 400
+        
+        # Check Metabase config
+        if not service.metabase_config:
+            return jsonify({"success": False, "error": "Metabase not configured"}), 500
+        
+        base_url = service.metabase_config['base_url'].rstrip('/')
+        
+        # Authenticate with Metabase
+        auth_response = requests.post(
+            f"{base_url}/api/session",
+            json={
+                "username": service.metabase_config['username'],
+                "password": service.metabase_config['password']
+            },
+            timeout=10
+        )
+        if auth_response.status_code != 200:
+            return jsonify({"success": False, "error": "Metabase authentication failed"}), 500
+        
+        headers = {"X-Metabase-Session": auth_response.json()["id"]}
+        
+        if target_type == 'dashboard':
+            # Fetch dashboard data with filters
+            return fetch_dashboard_drill_through(base_url, headers, target_id, filter_params)
+        else:
+            # Fetch question/card data with filters
+            return fetch_question_drill_through(base_url, headers, target_id, filter_params)
+            
+    except Exception as e:
+        logging.error(f"Drill-through error: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+def fetch_dashboard_drill_through(base_url, headers, dashboard_id, filter_params):
+    """Fetch data from a target dashboard with filter parameters applied"""
+    try:
+        # Get dashboard details
+        dash_response = requests.get(
+            f"{base_url}/api/dashboard/{dashboard_id}",
+            headers=headers,
+            timeout=30
+        )
+        if dash_response.status_code != 200:
+            return jsonify({"success": False, "error": f"Failed to fetch dashboard {dashboard_id}"}), 404
+        
+        dash_data = dash_response.json()
+        dashboard_name = dash_data.get('name', f'Dashboard {dashboard_id}')
+        dashcards = dash_data.get('dashcards', []) or dash_data.get('ordered_cards', [])
+        parameters = dash_data.get('parameters', [])
+        tabs = dash_data.get('tabs', [])
+        
+        # Build parameter values for the query
+        # Map filter_params to actual parameter IDs
+        param_values = {}
+        for param in parameters:
+            param_slug = param.get('slug', '')
+            param_name = param.get('name', '')
+            param_id = param.get('id')
+            
+            # Check if we have a filter value for this parameter
+            for filter_key, filter_value in filter_params.items():
+                filter_key_lower = filter_key.lower().replace('_', '').replace('-', '')
+                slug_lower = param_slug.lower().replace('_', '').replace('-', '')
+                name_lower = param_name.lower().replace('_', '').replace('-', '')
+                
+                if filter_key_lower == slug_lower or filter_key_lower == name_lower or filter_key_lower in slug_lower or filter_key_lower in name_lower:
+                    param_values[param_id] = filter_value
+                    break
+        
+        logging.info(f"Drill-through to dashboard {dashboard_id} with params: {param_values}")
+        
+        # Fetch data for each card
+        cards_data = []
+        for dc in dashcards:
+            card = dc.get('card', {})
+            if not card or not card.get('id'):
+                continue
+            
+            dashcard_id = dc.get('id')
+            card_id = card.get('id')
+            
+            try:
+                # Build the query with parameters
+                query_url = f"{base_url}/api/dashboard/{dashboard_id}/dashcard/{dashcard_id}/card/{card_id}/query"
+                
+                # Include parameter values in the query
+                query_body = {"parameters": [{"id": k, "value": v} for k, v in param_values.items()]} if param_values else {}
+                
+                card_response = requests.post(
+                    query_url,
+                    headers=headers,
+                    json=query_body,
+                    timeout=60
+                )
+                
+                if card_response.status_code in [200, 202]:
+                    result = card_response.json()
+                    data = result.get('data', {})
+                    
+                    if data:
+                        viz_settings = dc.get('visualization_settings', {})
+                        cards_data.append({
+                            'name': card.get('name', 'Unnamed'),
+                            'display': card.get('display', 'table'),
+                            'data': data,
+                            'dashboard_tab_id': dc.get('dashboard_tab_id'),
+                            'click_behavior': viz_settings.get('click_behavior'),
+                            'columns': card.get('result_metadata', [])
+                        })
+            except Exception as e:
+                logging.warning(f"Error fetching card {card_id}: {e}")
+        
+        return jsonify({
+            "success": True,
+            "drill_through": {
+                "type": "dashboard",
+                "id": dashboard_id,
+                "name": dashboard_name,
+                "tabs": tabs,
+                "parameters": parameters,
+                "applied_filters": filter_params,
+                "cards": cards_data
+            }
+        })
+        
+    except Exception as e:
+        logging.error(f"Dashboard drill-through error: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+def fetch_question_drill_through(base_url, headers, question_id, filter_params):
+    """Fetch data from a target question/card with filter parameters applied"""
+    try:
+        # Get question details
+        question_response = requests.get(
+            f"{base_url}/api/card/{question_id}",
+            headers=headers,
+            timeout=30
+        )
+        if question_response.status_code != 200:
+            return jsonify({"success": False, "error": f"Failed to fetch question {question_id}"}), 404
+        
+        question_data = question_response.json()
+        question_name = question_data.get('name', f'Question {question_id}')
+        
+        # Build query with filters
+        # For native queries, we'd need to handle parameters differently
+        # For MBQL queries, we can add filters
+        
+        query_body = {}
+        if filter_params:
+            # Add filters to the query
+            query_body["parameters"] = [
+                {"type": "category", "target": ["variable", ["template-tag", k]], "value": v}
+                for k, v in filter_params.items()
+            ]
+        
+        # Execute the query
+        query_response = requests.post(
+            f"{base_url}/api/card/{question_id}/query",
+            headers=headers,
+            json=query_body,
+            timeout=60
+        )
+        
+        if query_response.status_code not in [200, 202]:
+            return jsonify({"success": False, "error": f"Query failed: {query_response.status_code}"}), 500
+        
+        result = query_response.json()
+        data = result.get('data', {})
+        
+        return jsonify({
+            "success": True,
+            "drill_through": {
+                "type": "question",
+                "id": question_id,
+                "name": question_name,
+                "display": question_data.get('display', 'table'),
+                "applied_filters": filter_params,
+                "data": data,
+                "columns": question_data.get('result_metadata', [])
+            }
+        })
+        
+    except Exception as e:
+        logging.error(f"Question drill-through error: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
 
 
 if __name__ == "__main__":

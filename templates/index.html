@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dashboard Auto-Clone Service</title>
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Chart.js for real charts -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
     <style>
         :root {
             --bg-primary: #0a0a0f;
@@ -777,16 +779,14 @@
             border: 1px solid var(--border-color);
             border-radius: 12px;
             padding: 1.25rem;
-            cursor: pointer;
             transition: all 0.2s ease;
             position: relative;
             overflow: hidden;
         }
 
         .dashboard-card:hover {
-            transform: translateY(-2px);
-            border-color: var(--accent-blue);
-            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+            border-color: var(--border-color);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
         }
 
         .dashboard-card::before {
@@ -796,12 +796,6 @@
             left: 0;
             width: 4px;
             height: 100%;
-            background: var(--accent-blue);
-            opacity: 0;
-            transition: opacity 0.2s;
-        }
-
-        .dashboard-card:hover::before {
             opacity: 1;
         }
 
@@ -833,8 +827,10 @@
 
         .dashboard-card-footer {
             display: flex;
-            justify-content: space-between;
+            justify-content: flex-start;
             align-items: center;
+            gap: 0.5rem;
+            flex-wrap: wrap;
         }
 
         .dashboard-card-id {
@@ -869,18 +865,30 @@
             color: var(--accent-orange);
         }
 
-        .dashboard-card-icon {
-            position: absolute;
-            top: 1rem;
-            right: 1rem;
-            font-size: 0.8rem;
-            color: var(--text-muted);
-            opacity: 0;
-            transition: opacity 0.2s;
+        .dashboard-open-btn {
+            margin-left: auto;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+            padding: 0.4rem 0.75rem;
+            background: var(--accent-blue);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
         }
 
-        .dashboard-card:hover .dashboard-card-icon {
-            opacity: 1;
+        .dashboard-open-btn:hover {
+            background: #2563eb;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+        }
+
+        .dashboard-open-btn svg {
+            flex-shrink: 0;
         }
 
         .loading-spinner {
@@ -895,6 +903,419 @@
             padding: 3rem;
             color: var(--text-muted);
             grid-column: 1 / -1;
+        }
+
+        /* Dashboard Selection for Merge */
+        .dashboard-select-btn {
+            position: absolute;
+            top: 0.75rem;
+            right: 0.75rem;
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            border: 2px solid var(--border-color);
+            background: var(--bg-secondary);
+            color: var(--text-muted);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s ease;
+            z-index: 10;
+        }
+
+        .dashboard-select-btn:hover {
+            border-color: var(--accent-blue);
+            color: var(--accent-blue);
+            transform: scale(1.1);
+        }
+
+        .dashboard-select-btn.selected {
+            background: var(--accent-blue);
+            border-color: var(--accent-blue);
+            color: white;
+        }
+
+        .dashboard-select-btn svg {
+            width: 14px;
+            height: 14px;
+        }
+
+        .dashboard-card {
+            position: relative;
+        }
+
+        .dashboard-card.selected {
+            border-color: var(--accent-blue);
+            box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.3);
+        }
+
+        /* Merge Toolbar */
+        .merge-toolbar {
+            display: none;
+            background: var(--bg-secondary);
+            border: 1px solid var(--accent-blue);
+            border-radius: 12px;
+            padding: 1rem 1.5rem;
+            margin-bottom: 1rem;
+            align-items: center;
+            gap: 1rem;
+            flex-wrap: wrap;
+        }
+
+        .merge-toolbar.active {
+            display: flex;
+        }
+
+        .merge-toolbar-info {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            color: var(--text-primary);
+        }
+
+        .merge-toolbar-count {
+            background: var(--accent-blue);
+            color: white;
+            padding: 0.25rem 0.75rem;
+            border-radius: 100px;
+            font-size: 0.85rem;
+            font-weight: 600;
+        }
+
+        .merge-toolbar-input {
+            flex: 1;
+            min-width: 200px;
+            padding: 0.5rem 1rem;
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            color: var(--text-primary);
+            font-size: 0.9rem;
+        }
+
+        .merge-toolbar-input:focus {
+            outline: none;
+            border-color: var(--accent-blue);
+        }
+
+        .merge-toolbar-input::placeholder {
+            color: var(--text-muted);
+        }
+
+        .merge-toolbar-actions {
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        .merge-btn {
+            padding: 0.5rem 1rem;
+            border-radius: 8px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .merge-btn-primary {
+            background: var(--accent-green);
+            color: white;
+            border: none;
+        }
+
+        .merge-btn-primary:hover {
+            background: #059669;
+        }
+
+        .merge-btn-primary:disabled {
+            background: var(--text-muted);
+            cursor: not-allowed;
+        }
+
+        .merge-btn-secondary {
+            background: transparent;
+            color: var(--text-secondary);
+            border: 1px solid var(--border-color);
+        }
+
+        .merge-btn-secondary:hover {
+            border-color: var(--accent-red);
+            color: var(--accent-red);
+        }
+
+        /* Merged Dashboards Section */
+        .merged-section {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .merged-section-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 1rem;
+        }
+
+        .merged-section-header h2 {
+            font-size: 1.25rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .merged-section-header h2 svg {
+            width: 20px;
+            height: 20px;
+            color: var(--accent-purple);
+        }
+
+        .merged-count {
+            background: var(--bg-secondary);
+            padding: 0.25rem 0.75rem;
+            border-radius: 100px;
+            font-size: 0.8rem;
+            color: var(--text-muted);
+        }
+
+        .merged-list {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+        }
+
+        .merged-item {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            padding: 1rem;
+            background: var(--bg-secondary);
+            border-radius: 12px;
+            transition: all 0.2s ease;
+        }
+
+        .merged-item:hover {
+            background: var(--bg-hover);
+        }
+
+        .merged-item-info {
+            flex: 1;
+        }
+
+        .merged-item-name {
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 0.25rem;
+        }
+
+        .merged-item-meta {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            display: flex;
+            gap: 1rem;
+            flex-wrap: wrap;
+        }
+
+        .merged-item-type {
+            padding: 0.15rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.7rem;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .merged-item-type.content {
+            background: rgba(16, 185, 129, 0.2);
+            color: var(--accent-green);
+        }
+
+        .merged-item-type.message {
+            background: rgba(139, 92, 246, 0.2);
+            color: var(--accent-purple);
+        }
+
+        .merged-item-type.email {
+            background: rgba(245, 158, 11, 0.2);
+            color: var(--accent-orange);
+        }
+
+        .merged-item-actions {
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        .merged-item-btn {
+            padding: 0.4rem 0.75rem;
+            border-radius: 6px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            gap: 0.3rem;
+        }
+
+        .merged-item-btn.view {
+            background: var(--accent-blue);
+            color: white;
+            border: none;
+        }
+
+        .merged-item-btn.view:hover {
+            background: #2563eb;
+        }
+
+        .merged-item-btn.delete {
+            background: transparent;
+            color: var(--text-muted);
+            border: 1px solid var(--border-color);
+        }
+
+        .merged-item-btn.delete:hover {
+            border-color: var(--accent-red);
+            color: var(--accent-red);
+        }
+
+        .merged-empty {
+            text-align: center;
+            padding: 2rem;
+            color: var(--text-muted);
+        }
+
+        /* Merged Dashboard Viewer Modal */
+        .merged-viewer-modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: var(--bg-primary);
+            z-index: 10000;
+            display: none;
+            flex-direction: column;
+        }
+
+        .merged-viewer-modal.active {
+            display: flex;
+        }
+
+        .merged-viewer-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 1rem 2rem;
+            background: var(--bg-card);
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .merged-viewer-title {
+            font-size: 1.25rem;
+            font-weight: 600;
+        }
+
+        .merged-viewer-meta {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+        }
+
+        .merged-viewer-close {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem 1rem;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            color: var(--text-primary);
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .merged-viewer-close:hover {
+            border-color: var(--accent-blue);
+        }
+
+        .merged-viewer-body {
+            flex: 1;
+            overflow-y: auto;
+            padding: 2rem;
+        }
+
+        .merged-cards-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 1.5rem;
+        }
+
+        .merged-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 1.5rem;
+            min-height: 200px;
+        }
+
+        .merged-card-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 1rem;
+            padding-bottom: 0.75rem;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .merged-card-title {
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .merged-card-type {
+            font-size: 0.7rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+        }
+
+        .merged-card-value {
+            font-size: 3rem;
+            font-weight: 700;
+            color: var(--accent-blue);
+            text-align: center;
+            padding: 1rem 0;
+        }
+
+        .merged-card-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.85rem;
+        }
+
+        .merged-card-table th {
+            text-align: left;
+            padding: 0.5rem;
+            border-bottom: 1px solid var(--border-color);
+            color: var(--text-muted);
+            font-weight: 600;
+        }
+
+        .merged-card-table td {
+            padding: 0.5rem;
+            border-bottom: 1px solid var(--border-color);
+            color: var(--text-primary);
+        }
+
+        .merged-card-loading {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 150px;
+            color: var(--text-muted);
         }
 
         /* Config Section */
@@ -1196,12 +1617,312 @@
                 justify-content: center;
             }
         }
+
+        /* =================================================================
+           LOGIN PAGE STYLES
+           ================================================================= */
+        
+        .login-page {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: var(--bg-primary);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 10000;
+        }
+
+        .login-container {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 24px;
+            padding: 3rem;
+            max-width: 420px;
+            width: 90%;
+            text-align: center;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .login-container::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: linear-gradient(90deg, var(--accent-blue), var(--accent-cyan), var(--accent-purple));
+        }
+
+        .login-logo {
+            width: 80px;
+            height: 80px;
+            margin: 0 auto 1.5rem;
+            background: linear-gradient(135deg, var(--accent-blue), var(--accent-purple));
+            border-radius: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .login-logo svg {
+            width: 40px;
+            height: 40px;
+            stroke: white;
+        }
+
+        .login-title {
+            font-size: 1.75rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, var(--accent-blue), var(--accent-cyan), var(--accent-purple));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 0.5rem;
+        }
+
+        .login-subtitle {
+            color: var(--text-secondary);
+            font-size: 0.95rem;
+            margin-bottom: 2rem;
+        }
+
+        .login-btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.75rem;
+            width: 100%;
+            padding: 1rem 1.5rem;
+            background: #2f2f2f;
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            color: var(--text-primary);
+            font-size: 1rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .login-btn:hover {
+            background: #3a3a3a;
+            border-color: var(--accent-blue);
+            transform: translateY(-2px);
+        }
+
+        .login-btn svg {
+            width: 20px;
+            height: 20px;
+        }
+
+        .login-error {
+            background: rgba(239, 68, 68, 0.1);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            border-radius: 8px;
+            padding: 1rem;
+            margin-bottom: 1.5rem;
+            color: var(--accent-red);
+            font-size: 0.9rem;
+        }
+
+        .login-domain-note {
+            margin-top: 1.5rem;
+            padding-top: 1.5rem;
+            border-top: 1px solid var(--border-color);
+            color: var(--text-muted);
+            font-size: 0.85rem;
+        }
+
+        .login-domain-note strong {
+            color: var(--text-secondary);
+        }
+
+        /* =================================================================
+           USER MENU STYLES
+           ================================================================= */
+        
+        .user-menu {
+            position: absolute;
+            top: 1rem;
+            right: 2rem;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.5rem 1rem;
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 100px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .user-info:hover {
+            border-color: var(--accent-blue);
+            background: var(--bg-hover);
+        }
+
+        .user-avatar {
+            width: 32px;
+            height: 32px;
+            background: linear-gradient(135deg, var(--accent-blue), var(--accent-purple));
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+            font-size: 0.85rem;
+            color: white;
+        }
+
+        .user-name {
+            font-size: 0.9rem;
+            color: var(--text-primary);
+            max-width: 150px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .user-dropdown {
+            position: absolute;
+            top: 100%;
+            right: 0;
+            margin-top: 0.5rem;
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            min-width: 200px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+            opacity: 0;
+            visibility: hidden;
+            transform: translateY(-10px);
+            transition: all 0.2s ease;
+            z-index: 1000;
+        }
+
+        .user-info.active + .user-dropdown,
+        .user-dropdown.show {
+            opacity: 1;
+            visibility: visible;
+            transform: translateY(0);
+        }
+
+        .user-dropdown-header {
+            padding: 1rem;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .user-dropdown-email {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            word-break: break-all;
+        }
+
+        .user-dropdown-item {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.75rem 1rem;
+            color: var(--text-primary);
+            cursor: pointer;
+            transition: background 0.2s ease;
+        }
+
+        .user-dropdown-item:hover {
+            background: var(--bg-hover);
+        }
+
+        .user-dropdown-item.logout {
+            color: var(--accent-red);
+            border-top: 1px solid var(--border-color);
+        }
+
+        .user-dropdown-item svg {
+            width: 16px;
+            height: 16px;
+        }
+
+        /* Hide main content when not authenticated */
+        .main-content.hidden {
+            display: none;
+        }
+
+        .login-page.hidden {
+            display: none;
+        }
     </style>
 </head>
 <body>
     <div class="bg-pattern"></div>
     
+    <!-- Login Page (shown when not authenticated) -->
+    <div id="login-page" class="login-page">
+        <div class="login-container">
+            <div class="login-logo">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                    <line x1="3" y1="9" x2="21" y2="9"></line>
+                    <line x1="9" y1="21" x2="9" y2="9"></line>
+                </svg>
+            </div>
+            <h1 class="login-title">Dashboard Service</h1>
+            <p class="login-subtitle">Sign in to access the dashboard management tool</p>
+            
+            <div id="login-error" class="login-error" style="display: none;"></div>
+            
+            <button class="login-btn" onclick="startLogin()">
+                <svg viewBox="0 0 23 23" fill="none">
+                    <path fill="#f3f3f3" d="M0 0h11v11H0z"/>
+                    <path fill="#f35325" d="M0 0h11v11H0z"/>
+                    <path fill="#81bc06" d="M12 0h11v11H12z"/>
+                    <path fill="#05a6f0" d="M0 12h11v11H0z"/>
+                    <path fill="#ffba08" d="M12 12h11v11H12z"/>
+                </svg>
+                Sign in with Microsoft
+            </button>
+            
+            <div class="login-domain-note" id="login-domain-note" style="display: none;">
+                <strong>Note:</strong> Only <span id="allowed-domain"></span> accounts are allowed.
+            </div>
+        </div>
+    </div>
+    
+    <!-- Main Content (shown when authenticated) -->
+    <div id="main-content" class="main-content hidden">
     <div class="container">
+        <!-- User Menu -->
+        <div class="user-menu">
+            <div class="user-info" id="user-info" onclick="toggleUserDropdown()">
+                <div class="user-avatar" id="user-avatar">?</div>
+                <span class="user-name" id="user-name">Loading...</span>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="6 9 12 15 18 9"></polyline>
+                </svg>
+            </div>
+            <div class="user-dropdown" id="user-dropdown">
+                <div class="user-dropdown-header">
+                    <div class="user-dropdown-email" id="user-email">user@example.com</div>
+                </div>
+                <div class="user-dropdown-item logout" onclick="logout()">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+                        <polyline points="16 17 21 12 16 7"></polyline>
+                        <line x1="21" y1="12" x2="9" y2="12"></line>
+                    </svg>
+                    Sign Out
+                </div>
+            </div>
+        </div>
+        
         <header class="header">
             <h1>Dashboard Auto-Clone Service</h1>
             <p>Automatically creates dashboards for new databases every 4 hours</p>
@@ -1285,6 +2006,27 @@
                         Back to Dashboard
                     </button>
                 </div>
+                
+                <!-- Merge Toolbar -->
+                <div id="merge-toolbar" class="merge-toolbar">
+                    <div class="merge-toolbar-info">
+                        <span class="merge-toolbar-count" id="merge-count">0</span>
+                        <span>dashboards selected for merge</span>
+                    </div>
+                    <input type="text" class="merge-toolbar-input" id="merge-name-input" placeholder="Enter merged dashboard name...">
+                    <div class="merge-toolbar-actions">
+                        <button class="merge-btn merge-btn-secondary" onclick="clearMergeSelection()">
+                            Clear
+                        </button>
+                        <button class="merge-btn merge-btn-primary" id="create-merge-btn" onclick="createMergedDashboard()" disabled>
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M12 5v14M5 12h14"/>
+                            </svg>
+                            Create Merged Dashboard
+                        </button>
+                    </div>
+                </div>
+                
                 <div class="dashboards-modal-search">
                     <input type="text" id="dashboard-search" placeholder="Search dashboards by name, description, or ID..." oninput="filterDashboardCards()">
                 </div>
@@ -1295,6 +2037,28 @@
                 </div>
             </div>
         </div>
+
+        <!-- Merged Dashboards Section -->
+        <section class="merged-section">
+            <div class="merged-section-header">
+                <h2>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="3" y="3" width="7" height="7"></rect>
+                        <rect x="14" y="3" width="7" height="7"></rect>
+                        <rect x="14" y="14" width="7" height="7"></rect>
+                        <rect x="3" y="14" width="7" height="7"></rect>
+                    </svg>
+                    Merged Dashboards
+                </h2>
+                <span class="merged-count" id="merged-count">0 merged</span>
+            </div>
+            <div class="merged-list" id="merged-list">
+                <div class="merged-empty">
+                    <p>No merged dashboards yet</p>
+                    <p style="font-size: 0.85rem; margin-top: 0.5rem;">Click on dashboard cards and use the + button to select dashboards for merging</p>
+                </div>
+            </div>
+        </section>
 
         <!-- Config Section -->
         <section class="config-section">
@@ -1372,6 +2136,12 @@
         let secondsRemaining = 0;
         let allLogEntries = [];  // Store all entries for filtering
         let selectedDate = null;
+        let currentUser = null;  // Current authenticated user
+        let userDropdownOpen = false;
+        
+        // Dashboard merge selection state
+        let selectedDashboards = new Map();  // Map of id -> dashboard object
+        let mergedDashboardsList = [];  // List of merged dashboards
         
         // Multi-select filter state
         let filters = {
@@ -1379,6 +2149,159 @@
             types: new Set(),      // Multi-select: content, message, email
             statuses: new Set()    // Multi-select: success, failed, deleted
         };
+
+        // =================================================================
+        // AUTHENTICATION FUNCTIONS
+        // =================================================================
+        
+        async function checkAuthStatus() {
+            try {
+                const response = await fetch('/api/auth/status');
+                const data = await response.json();
+                
+                if (!data.auth_configured) {
+                    // Auth not configured - show main content without login
+                    showMainContent();
+                    return;
+                }
+                
+                // Show allowed domain note on login page
+                if (data.allowed_domain) {
+                    document.getElementById('login-domain-note').style.display = 'block';
+                    document.getElementById('allowed-domain').textContent = '@' + data.allowed_domain;
+                }
+                
+                if (data.authenticated && data.user) {
+                    currentUser = data.user;
+                    showMainContent();
+                    updateUserMenu();
+                } else {
+                    showLoginPage();
+                    checkLoginError();
+                }
+            } catch (error) {
+                console.error('Auth status check failed:', error);
+                // On error, show main content (fail open for development)
+                showMainContent();
+            }
+        }
+        
+        function checkLoginError() {
+            // Check URL for error parameters
+            const urlParams = new URLSearchParams(window.location.search);
+            const error = urlParams.get('error');
+            
+            if (error) {
+                const errorDiv = document.getElementById('login-error');
+                let errorMessage = 'Login failed. Please try again.';
+                
+                switch (error) {
+                    case 'domain_not_allowed':
+                        const domain = urlParams.get('domain');
+                        errorMessage = `Access denied. The domain @${domain} is not allowed.`;
+                        break;
+                    case 'no_email':
+                        errorMessage = 'Could not retrieve email from your account.';
+                        break;
+                    case 'oauth_not_configured':
+                        errorMessage = 'OAuth is not configured on the server.';
+                        break;
+                    case 'session_creation_failed':
+                        errorMessage = 'Failed to create session. Please try again.';
+                        break;
+                    case 'callback_failed':
+                        errorMessage = 'Authentication callback failed. Please try again.';
+                        break;
+                }
+                
+                errorDiv.textContent = errorMessage;
+                errorDiv.style.display = 'block';
+                
+                // Clean URL
+                window.history.replaceState({}, document.title, window.location.pathname);
+            }
+        }
+        
+        function showLoginPage() {
+            document.getElementById('login-page').classList.remove('hidden');
+            document.getElementById('main-content').classList.add('hidden');
+        }
+        
+        function showMainContent() {
+            document.getElementById('login-page').classList.add('hidden');
+            document.getElementById('main-content').classList.remove('hidden');
+        }
+        
+        async function startLogin() {
+            try {
+                const response = await fetch('/api/auth/login');
+                const data = await response.json();
+                
+                if (data.auth_url) {
+                    window.location.href = data.auth_url;
+                } else if (data.error) {
+                    const errorDiv = document.getElementById('login-error');
+                    errorDiv.textContent = data.error;
+                    errorDiv.style.display = 'block';
+                }
+            } catch (error) {
+                console.error('Login failed:', error);
+                const errorDiv = document.getElementById('login-error');
+                errorDiv.textContent = 'Failed to start login. Please try again.';
+                errorDiv.style.display = 'block';
+            }
+        }
+        
+        function updateUserMenu() {
+            if (!currentUser) return;
+            
+            // Set avatar initials
+            const initials = (currentUser.name || currentUser.email || '?')
+                .split(' ')
+                .map(n => n[0])
+                .join('')
+                .substring(0, 2)
+                .toUpperCase();
+            document.getElementById('user-avatar').textContent = initials;
+            
+            // Set name
+            document.getElementById('user-name').textContent = currentUser.name || currentUser.email;
+            
+            // Set email in dropdown
+            document.getElementById('user-email').textContent = currentUser.email;
+        }
+        
+        function toggleUserDropdown() {
+            userDropdownOpen = !userDropdownOpen;
+            const dropdown = document.getElementById('user-dropdown');
+            const userInfo = document.getElementById('user-info');
+            
+            if (userDropdownOpen) {
+                dropdown.classList.add('show');
+                userInfo.classList.add('active');
+            } else {
+                dropdown.classList.remove('show');
+                userInfo.classList.remove('active');
+            }
+        }
+        
+        async function logout() {
+            try {
+                await fetch('/api/auth/logout', { method: 'POST' });
+                currentUser = null;
+                showLoginPage();
+            } catch (error) {
+                console.error('Logout failed:', error);
+            }
+        }
+        
+        // Close dropdown when clicking outside
+        document.addEventListener('click', (e) => {
+            const userMenu = document.querySelector('.user-menu');
+            if (userMenu && !userMenu.contains(e.target) && userDropdownOpen) {
+                toggleUserDropdown();
+            }
+        });
 
         // Format seconds to HH:MM:SS
         function formatTime(seconds) {
@@ -1651,17 +2574,35 @@
             // Sort by name
             dashboards.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
             
-            grid.innerHTML = dashboards.map(d => `
-                <div class="dashboard-card type-${d.type}" onclick="openDashboard('${d.url}')" title="Click to open in Metabase">
-                    <span class="dashboard-card-icon">↗</span>
+            grid.innerHTML = dashboards.map(d => {
+                const isSelected = selectedDashboards.has(d.id);
+                const selectedClass = isSelected ? 'selected' : '';
+                const btnSelectedClass = isSelected ? 'selected' : '';
+                const btnIcon = isSelected 
+                    ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"></polyline></svg>'
+                    : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>';
+                
+                return `
+                <div class="dashboard-card type-${d.type} ${selectedClass}" data-id="${d.id}">
+                    <button class="dashboard-select-btn ${btnSelectedClass}" onclick="toggleDashboardSelection(${d.id}, '${escapeHtml(d.name || 'Unnamed')}', '${d.type}', '${d.url}')" title="${isSelected ? 'Remove from selection' : 'Add to merge'}">
+                        ${btnIcon}
+                    </button>
                     <div class="dashboard-card-name">${escapeHtml(d.name || 'Unnamed Dashboard')}</div>
                     <div class="dashboard-card-desc">${escapeHtml(d.description || 'No description')}</div>
                     <div class="dashboard-card-footer">
                         <span class="dashboard-card-id">ID: ${d.id}</span>
                         <span class="dashboard-card-type ${d.type}">${d.type}</span>
+                        <button class="dashboard-open-btn" onclick="openDashboard('${d.url}')">
+                            Open
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+                                <polyline points="15 3 21 3 21 9"></polyline>
+                                <line x1="10" y1="14" x2="21" y2="3"></line>
+                            </svg>
+                        </button>
                     </div>
                 </div>
-            `).join('');
+            `}).join('');
         }
 
         // Filter dashboard cards by search
@@ -1698,6 +2639,1408 @@
             const div = document.createElement('div');
             div.textContent = text;
             return div.innerHTML;
+        }
+
+        // =================================================================
+        // DASHBOARD MERGE FUNCTIONS
+        // =================================================================
+        
+        // Toggle dashboard selection for merge
+        function toggleDashboardSelection(id, name, type, url) {
+            // Check if we can add this dashboard (same type only)
+            if (selectedDashboards.size > 0) {
+                const firstSelected = selectedDashboards.values().next().value;
+                if (firstSelected.type !== type) {
+                    showToast(`Can only merge dashboards of the same type. Currently selecting: ${firstSelected.type}`, 'error');
+                    return;
+                }
+            }
+            
+            if (selectedDashboards.has(id)) {
+                selectedDashboards.delete(id);
+            } else {
+                selectedDashboards.set(id, { id, name, type, url });
+            }
+            
+            updateMergeToolbar();
+            // Re-render to update selection state
+            filterDashboardCards();
+        }
+        
+        // Update merge toolbar visibility and content
+        function updateMergeToolbar() {
+            const toolbar = document.getElementById('merge-toolbar');
+            const countEl = document.getElementById('merge-count');
+            const createBtn = document.getElementById('create-merge-btn');
+            
+            if (selectedDashboards.size > 0) {
+                toolbar.classList.add('active');
+                countEl.textContent = selectedDashboards.size;
+                createBtn.disabled = selectedDashboards.size < 2;
+            } else {
+                toolbar.classList.remove('active');
+            }
+        }
+        
+        // Clear merge selection
+        function clearMergeSelection() {
+            selectedDashboards.clear();
+            document.getElementById('merge-name-input').value = '';
+            updateMergeToolbar();
+            filterDashboardCards();
+        }
+        
+        // Create merged dashboard
+        async function createMergedDashboard() {
+            const nameInput = document.getElementById('merge-name-input');
+            const name = nameInput.value.trim();
+            
+            if (!name) {
+                showToast('Please enter a name for the merged dashboard', 'error');
+                nameInput.focus();
+                return;
+            }
+            
+            if (selectedDashboards.size < 2) {
+                showToast('Select at least 2 dashboards to merge', 'error');
+                return;
+            }
+            
+            const createBtn = document.getElementById('create-merge-btn');
+            createBtn.disabled = true;
+            createBtn.innerHTML = '<svg class="spin" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 11-6.219-8.56"></path></svg> Creating...';
+            
+            try {
+                const sourceDashboards = Array.from(selectedDashboards.values()).map(d => ({
+                    id: d.id,
+                    name: d.name
+                }));
+                
+                const type = sourceDashboards[0] ? selectedDashboards.values().next().value.type : 'content';
+                
+                const response = await fetch('/api/merged-dashboards', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        name: name,
+                        type: type,
+                        source_dashboards: sourceDashboards
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    showToast('Merged dashboard created successfully!', 'success');
+                    clearMergeSelection();
+                    closeDashboardsModal();
+                    loadMergedDashboards();
+                } else {
+                    showToast(data.error || 'Failed to create merged dashboard', 'error');
+                }
+            } catch (error) {
+                console.error('Failed to create merged dashboard:', error);
+                showToast('Failed to create merged dashboard', 'error');
+            } finally {
+                createBtn.disabled = false;
+                createBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg> Create Merged Dashboard';
+                updateMergeToolbar();
+            }
+        }
+        
+        // Load merged dashboards list
+        async function loadMergedDashboards() {
+            try {
+                const response = await fetch('/api/merged-dashboards');
+                const data = await response.json();
+                
+                if (data.success) {
+                    mergedDashboardsList = data.dashboards || [];
+                    renderMergedDashboards();
+                }
+            } catch (error) {
+                console.error('Failed to load merged dashboards:', error);
+            }
+        }
+        
+        // Render merged dashboards list
+        function renderMergedDashboards() {
+            const listEl = document.getElementById('merged-list');
+            const countEl = document.getElementById('merged-count');
+            
+            countEl.textContent = `${mergedDashboardsList.length} merged`;
+            
+            if (mergedDashboardsList.length === 0) {
+                listEl.innerHTML = `
+                    <div class="merged-empty">
+                        <p>No merged dashboards yet</p>
+                        <p style="font-size: 0.85rem; margin-top: 0.5rem;">Click on dashboard cards and use the + button to select dashboards for merging</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            listEl.innerHTML = mergedDashboardsList.map(d => `
+                <div class="merged-item">
+                    <span class="merged-item-type ${d.type}">${d.type}</span>
+                    <div class="merged-item-info">
+                        <div class="merged-item-name">${escapeHtml(d.name)}</div>
+                        <div class="merged-item-meta">
+                            <span>${d.source_dashboards?.length || 0} sources</span>
+                            <span>Created: ${formatDate(d.created_at)}</span>
+                            ${d.created_by?.name ? `<span>By: ${escapeHtml(d.created_by.name)}</span>` : ''}
+                        </div>
+                    </div>
+                    <div class="merged-item-actions">
+                        <button class="merged-item-btn view" id="view-merged-${d.id}" onclick="viewMergedDashboard('${d.id}')">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                                <circle cx="12" cy="12" r="3"></circle>
+                            </svg>
+                            View
+                        </button>
+                        <button class="merged-item-btn delete" onclick="deleteMergedDashboard('${d.id}', '${escapeHtml(d.name)}')">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polyline points="3 6 5 6 21 6"></polyline>
+                                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                            </svg>
+                            Delete
+                        </button>
+                    </div>
+                </div>
+            `).join('');
+        }
+        
+        // Format date for display
+        function formatDate(isoString) {
+            if (!isoString) return 'Unknown';
+            const date = new Date(isoString);
+            return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+        }
+        
+        // Delete merged dashboard
+        async function deleteMergedDashboard(id, name) {
+            if (!confirm(`Are you sure you want to delete "${name}"?`)) {
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/api/merged-dashboards/${id}`, {
+                    method: 'DELETE'
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    showToast('Merged dashboard deleted', 'success');
+                    loadMergedDashboards();
+                } else {
+                    showToast(data.error || 'Failed to delete', 'error');
+                }
+            } catch (error) {
+                console.error('Failed to delete merged dashboard:', error);
+                showToast('Failed to delete merged dashboard', 'error');
+            }
+        }
+        
+        // Current merged dashboard data (for tab switching)
+        let currentMergedDashboard = null;
+        let currentMergedTabId = null;
+        let chartInstances = {}; // Store Chart.js instances for cleanup
+        
+        // Chart.js color palette
+        const chartColors = [
+            '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', 
+            '#06b6d4', '#ec4899', '#84cc16', '#f97316', '#14b8a6',
+            '#a855f7', '#22c55e', '#eab308', '#dc2626', '#6366f1'
+        ];
+        
+        // View merged dashboard
+        async function viewMergedDashboard(id) {
+            const modal = document.getElementById('merged-viewer-modal');
+            const titleEl = document.getElementById('merged-viewer-title');
+            const metaEl = document.getElementById('merged-viewer-meta');
+            const gridEl = document.getElementById('merged-cards-grid');
+            const tabsEl = document.getElementById('merged-tabs');
+            const filtersEl = document.getElementById('merged-filters');
+            
+            modal.classList.add('active');
+            document.body.style.overflow = 'hidden';
+            
+            // Cleanup previous chart instances
+            Object.values(chartInstances).forEach(chart => chart.destroy());
+            chartInstances = {};
+            
+            titleEl.textContent = 'Loading...';
+            metaEl.textContent = '';
+            gridEl.innerHTML = '<div class="merged-card-loading">Loading dashboard data...</div>';
+            tabsEl.style.display = 'none';
+            filtersEl.style.display = 'none';
+            
+            try {
+                const response = await fetch(`/api/merged-dashboard-data/${id}`);
+                const data = await response.json();
+                
+                if (data.success && data.merged_dashboard) {
+                    const dashboard = data.merged_dashboard;
+                    currentMergedDashboard = dashboard;
+                    
+                    titleEl.textContent = dashboard.name;
+                    metaEl.textContent = `${dashboard.type.toUpperCase()} | ${dashboard.source_count} sources | ${dashboard.cards?.length || 0} cards`;
+                    
+                    // Filters disabled for now
+                    // if (dashboard.parameters && dashboard.parameters.length > 0) {
+                    //     renderMergedFilters(dashboard.parameters);
+                    // }
+                    
+                    // Render tabs if present
+                    if (dashboard.tabs && dashboard.tabs.length > 0) {
+                        renderMergedTabs(dashboard.tabs);
+                        // Set first tab as active
+                        currentMergedTabId = dashboard.tabs[0].id;
+                    } else {
+                        currentMergedTabId = null;
+                        tabsEl.style.display = 'none';
+                    }
+                    
+                    // Store original cards for filtering
+                    originalMergedCards = JSON.parse(JSON.stringify(dashboard.cards || []));
+                    
+                    renderMergedCards(dashboard.cards || [], currentMergedTabId);
+                } else {
+                    gridEl.innerHTML = `<div class="merged-card-loading">Error: ${data.error || 'Failed to load data'}</div>`;
+                }
+            } catch (error) {
+                console.error('Failed to load merged dashboard:', error);
+                gridEl.innerHTML = '<div class="merged-card-loading">Failed to load dashboard data</div>';
+            }
+        }
+        
+        // Store current filter values globally
+        let currentMergedFilters = {};
+        // Store original unfiltered cards for filtering
+        let originalMergedCards = null;
+        
+        // Render filters based on dashboard parameters
+        function renderMergedFilters(parameters) {
+            const filtersEl = document.getElementById('merged-filters');
+            if (!parameters || parameters.length === 0) {
+                filtersEl.style.display = 'none';
+                return;
+            }
+            
+            // First, collect all unique values from ALL cards for each filter
+            const filterOptions = {};
+            parameters.forEach(param => {
+                filterOptions[param.id] = new Set();
+            });
+            
+            // Scan all cards to find filter values
+            if (currentMergedDashboard && currentMergedDashboard.cards) {
+                currentMergedDashboard.cards.forEach(card => {
+                    if (!card.data || !card.data.rows || !card.data.cols) return;
+                    
+                    card.data.cols.forEach((col, colIdx) => {
+                        const colName = (col.name || col.display_name || '').toLowerCase().replace(/[_-]/g, '');
+                        
+                        // Try to match column to a parameter
+                        parameters.forEach(param => {
+                            const paramName = (param.name || '').toLowerCase().replace(/[_-]/g, '');
+                            const paramSlug = (param.slug || '').toLowerCase().replace(/[_-]/g, '');
+                            
+                            // Match by name similarity - be more flexible
+                            const matches = 
+                                colName === paramName ||
+                                colName === paramSlug ||
+                                colName.includes(paramName) || 
+                                paramName.includes(colName) ||
+                                colName.includes(paramSlug) || 
+                                paramSlug.includes(colName) ||
+                                // Common field name variations
+                                (colName.includes('user') && paramName.includes('user')) ||
+                                (colName.includes('email') && paramName.includes('email')) ||
+                                (colName.includes('status') && paramName.includes('status')) ||
+                                (colName.includes('cloud') && paramName.includes('cloud')) ||
+                                (colName.includes('process') && paramName.includes('process')) ||
+                                (colName.includes('from') && paramName.includes('from')) ||
+                                (colName.includes('to') && paramName.includes('to')) ||
+                                (colName.includes('date') && paramName.includes('date')) ||
+                                (colName.includes('type') && paramName.includes('type'));
+                            
+                            if (matches) {
+                                card.data.rows.forEach(row => {
+                                    const val = row[colIdx];
+                                    if (val !== null && val !== undefined && val !== '') {
+                                        filterOptions[param.id].add(String(val));
+                                    }
+                                });
+                            }
+                        });
+                    });
+                });
+            }
+            
+            console.log('Filter options collected:', Object.fromEntries(
+                Object.entries(filterOptions).map(([k, v]) => [k, Array.from(v).slice(0, 5)])
+            ));
+            
+            filtersEl.style.display = 'flex';
+            filtersEl.innerHTML = parameters.map(param => {
+                const paramType = param.type || '';
+                const paramName = param.name || '';
+                const paramId = param.id;
+                
+                const paramSlug = param.slug || paramName;
+                
+                // For boolean filters, create a dropdown with Yes/No
+                if (paramType.includes('boolean')) {
+                    return `
+                        <div class="merged-filter-group">
+                            <span class="merged-filter-label">${escapeHtml(paramName)}</span>
+                            <select class="merged-filter-select" data-param-id="${paramId}" data-param-name="${paramName}" data-param-slug="${paramSlug}" data-param-type="boolean" onchange="applyMergedFilter()">
+                                <option value="">All</option>
+                                <option value="true">Yes</option>
+                                <option value="false">No</option>
+                            </select>
+                        </div>
+                    `;
+                }
+                
+                // For string filters, create dropdown with collected values
+                const options = Array.from(filterOptions[paramId] || []).sort().slice(0, 100);
+                const optionsHtml = options.map(val => 
+                    `<option value="${escapeHtml(val)}">${escapeHtml(val.length > 40 ? val.substring(0, 37) + '...' : val)}</option>`
+                ).join('');
+                
+                return `
+                    <div class="merged-filter-group">
+                        <span class="merged-filter-label">${escapeHtml(paramName)}</span>
+                        <select class="merged-filter-select" data-param-id="${paramId}" data-param-name="${paramName}" data-param-slug="${paramSlug}" data-param-type="string" onchange="applyMergedFilter()">
+                            <option value="">All${options.length > 0 ? ` (${options.length})` : ''}</option>
+                            ${optionsHtml}
+                        </select>
+                    </div>
+                `;
+            }).join('');
+        }
+        
+        // Apply filters - server-side filtering by re-fetching data with filter params
+        async function applyMergedFilter() {
+            if (!currentMergedDashboard) return;
+            
+            // Collect current filter values
+            const filters = {};
+            document.querySelectorAll('.merged-filter-select').forEach(el => {
+                const paramName = el.dataset.paramName;
+                const paramSlug = el.dataset.paramSlug || paramName;
+                const value = el.value;
+                if (paramName && value) {
+                    // Use the parameter name/slug as the key for the query string
+                    filters[paramSlug] = value;
+                }
+            });
+            
+            currentMergedFilters = filters;
+            console.log('Applying filters (server-side):', filters);
+            
+            // If no filters, show original data
+            if (Object.keys(filters).length === 0) {
+                console.log('No filters, showing original cards');
+                if (originalMergedCards) {
+                    renderMergedCards(originalMergedCards, currentMergedTabId);
+                }
+                return;
+            }
+            
+            // Build query string from filters
+            const queryParams = new URLSearchParams(filters).toString();
+            const dashboardId = currentMergedDashboard._id || currentMergedDashboard.id;
+            
+            // Show loading state
+            const gridEl = document.getElementById('merged-cards-grid');
+            gridEl.innerHTML = '<div class="merged-card-loading" style="grid-column: span 24;">Applying filters...</div>';
+            
+            try {
+                // Re-fetch data with filter parameters
+                const response = await fetch(`/api/merged-dashboard-data/${dashboardId}?${queryParams}`);
+                const data = await response.json();
+                
+                if (data.success && data.merged_dashboard) {
+                    const dashboard = data.merged_dashboard;
+                    
+                    // Update the cards with filtered data
+                    renderMergedCards(dashboard.cards || [], currentMergedTabId);
+                    console.log('Filtered data loaded:', dashboard.cards?.length, 'cards');
+                } else {
+                    console.error('Filter request failed:', data.error);
+                    gridEl.innerHTML = `<div class="merged-card-loading" style="grid-column: span 24;">Error: ${data.error || 'Failed to apply filters'}</div>`;
+                }
+            } catch (error) {
+                console.error('Filter request error:', error);
+                gridEl.innerHTML = '<div class="merged-card-loading" style="grid-column: span 24;">Failed to apply filters</div>';
+            }
+        }
+        
+        // Render tabs
+        function renderMergedTabs(tabs) {
+            const tabsEl = document.getElementById('merged-tabs');
+            if (!tabs || tabs.length === 0) {
+                tabsEl.style.display = 'none';
+                return;
+            }
+            
+            // Filter out tabs with name "." (hidden/user tabs)
+            const visibleTabs = tabs.filter(t => t.name && t.name.trim() !== '.');
+            
+            // Show tabs even if there's only one (user might want to see tab name)
+            if (visibleTabs.length === 0) {
+                tabsEl.style.display = 'none';
+                return;
+            }
+            
+            // If only 1 tab and it's generic like "Tab 1", hide the tab bar
+            if (visibleTabs.length === 1 && visibleTabs[0].name === 'Tab 1') {
+                tabsEl.style.display = 'none';
+                return;
+            }
+            
+            tabsEl.style.display = 'flex';
+            tabsEl.innerHTML = visibleTabs.map((tab, idx) => `
+                <button class="merged-tab ${idx === 0 ? 'active' : ''}" onclick="switchMergedTab(${tab.id})" data-tab-id="${tab.id}">
+                    ${escapeHtml(tab.name || `Tab ${idx + 1}`)}
+                </button>
+            `).join('');
+        }
+        
+        // Switch tab
+        function switchMergedTab(tabId) {
+            currentMergedTabId = tabId;
+            
+            // Update tab buttons
+            document.querySelectorAll('.merged-tab').forEach(btn => {
+                btn.classList.remove('active');
+                if (btn.dataset.tabId == tabId) {
+                    btn.classList.add('active');
+                }
+            });
+            
+            // Re-render cards for this tab
+            if (currentMergedDashboard) {
+                renderMergedCards(currentMergedDashboard.cards || [], tabId);
+            }
+        }
+        
+        // Render merged dashboard cards
+        function renderMergedCards(cards, tabId) {
+            const gridEl = document.getElementById('merged-cards-grid');
+            
+            // Cleanup previous chart instances
+            Object.values(chartInstances).forEach(chart => {
+                try { chart.destroy(); } catch(e) {}
+            });
+            chartInstances = {};
+            
+            if (!cards || cards.length === 0) {
+                gridEl.innerHTML = '<div class="merged-card-loading" style="grid-column: span 24;">No cards found in this dashboard</div>';
+                return;
+            }
+            
+            // Filter cards by tab if tabId is specified
+            let filteredCards = cards;
+            if (tabId !== null && tabId !== undefined) {
+                filteredCards = cards.filter(c => c.dashboard_tab_id === tabId);
+            }
+            
+            if (filteredCards.length === 0) {
+                gridEl.innerHTML = '<div class="merged-card-loading" style="grid-column: span 24;">No cards in this tab</div>';
+                return;
+            }
+            
+            // Sort cards by row then col for proper layout
+            filteredCards.sort((a, b) => {
+                const rowDiff = (a.row || 0) - (b.row || 0);
+                if (rowDiff !== 0) return rowDiff;
+                return (a.col || 0) - (b.col || 0);
+            });
+            
+            // Store cards for click behavior reference
+            window.mergedCardsData = filteredCards;
+            
+            gridEl.innerHTML = filteredCards.map((card, idx) => {
+                const displayType = card.display || 'table';
+                const cardId = `chart-${idx}-${Date.now()}`;
+                const hasClickBehavior = card.click_behavior && card.click_behavior.type;
+                
+                // Calculate grid position based on Metabase's 24-column grid
+                const colSpan = Math.min(card.size_x || 6, 24);
+                const gridStyle = `grid-column: span ${colSpan};`;
+                
+                // Click behavior disabled for now
+                return `
+                    <div class="merged-card" 
+                         style="${gridStyle}" data-card-index="${idx}">
+                        <div class="merged-card-header">
+                            <span class="merged-card-title" title="${escapeHtml(card.name || 'Unnamed Card')}">${escapeHtml(card.name || 'Unnamed Card')}</span>
+                            <span class="merged-card-type">${displayType}</span>
+                        </div>
+                        <div class="merged-card-body" id="card-body-${idx}">
+                            ${renderCardContent(card, displayType, cardId, idx)}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+            
+            // Initialize Chart.js charts after DOM is ready
+            const cardsToRender = [...filteredCards];
+            setTimeout(() => {
+                cardsToRender.forEach((card, idx) => {
+                    const displayType = card.display || 'table';
+                    if (displayType === 'pie') {
+                        initPieChart(card, idx);
+                    } else if (displayType === 'bar' || displayType === 'row') {
+                        initBarChart(card, idx, displayType);
+                    } else if (displayType === 'line' || displayType === 'area') {
+                        initLineChart(card, idx);
+                    }
+                });
+            }, 100);
+        }
+        
+        // Drill-through navigation stack for multi-level drill-through
+        let drillThroughStack = [];
+        
+        // Handle card click behavior - this is the main entry point for drill-through
+        function handleCardClick(cardIdx, event) {
+            if (event) {
+                event.stopPropagation();
+                event.preventDefault();
+            }
+            
+            console.log('handleCardClick called with index:', cardIdx);
+            
+            const card = window.mergedCardsData ? window.mergedCardsData[cardIdx] : null;
+            if (!card) {
+                console.error('Card not found at index', cardIdx, 'mergedCardsData:', window.mergedCardsData);
+                alert('Card data not found. Please try again.');
+                return;
+            }
+            
+            console.log('Card clicked:', cardIdx, card.name, card.display, 'click_behavior:', card.click_behavior);
+            
+            // Check if card has click behavior configured
+            if (card.click_behavior && card.click_behavior.targetId) {
+                // This card has a drill-through target - fetch data from target dashboard/question
+                const clickBehavior = card.click_behavior;
+                const targetType = clickBehavior.linkType || 'dashboard';
+                const targetId = clickBehavior.targetId;
+                const paramMapping = clickBehavior.parameterMapping || {};
+                
+                // Build filter params from the card's data
+                // For charts, we need to determine what was clicked (this is simplified - real implementation would track click position)
+                let filterParams = {};
+                
+                // If we have parameter mapping, use it to build filters
+                if (Object.keys(paramMapping).length > 0) {
+                    // Get the first row of data as default filter values
+                    if (card.data && card.data.rows && card.data.rows[0]) {
+                        const cols = card.data.cols || [];
+                        const firstRow = card.data.rows[0];
+                        
+                        // Map column values to parameters
+                        Object.entries(paramMapping).forEach(([paramId, mapping]) => {
+                            const sourceId = mapping.source?.id;
+                            const targetParamId = mapping.target?.id;
+                            
+                            // Find the column index for this source
+                            if (sourceId) {
+                                const colIdx = cols.findIndex(c => c.name === sourceId || c.id === sourceId);
+                                if (colIdx >= 0 && firstRow[colIdx] !== undefined) {
+                                    filterParams[targetParamId || sourceId] = firstRow[colIdx];
+                                }
+                            }
+                        });
+                    }
+                }
+                
+                // Start drill-through
+                drillThroughStack = []; // Reset stack for new drill-through
+                performDrillThrough(targetType, targetId, filterParams, card.name);
+            } else {
+                // No click behavior - show the card's own data in a modal
+                showCardDataModal(card);
+            }
+        }
+        
+        // Make handleCardClick globally accessible
+        window.handleCardClick = handleCardClick;
+        
+        // Perform drill-through by fetching data from target dashboard/question
+        async function performDrillThrough(targetType, targetId, filterParams, sourceName) {
+            console.log('Performing drill-through:', { targetType, targetId, filterParams, sourceName });
+            
+            // Show loading modal
+            showDrillDownModal({
+                name: `Loading drill-through data...`,
+                loading: true
+            });
+            
+            try {
+                const response = await fetch('/api/drill-through', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        targetType: targetType,
+                        targetId: targetId,
+                        filterParams: filterParams
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success && data.drill_through) {
+                    // Push to navigation stack
+                    drillThroughStack.push({
+                        type: targetType,
+                        id: targetId,
+                        name: data.drill_through.name,
+                        filters: filterParams
+                    });
+                    
+                    // Show the drill-through data
+                    showDrillThroughModal(data.drill_through);
+                } else {
+                    showDrillDownModal({
+                        name: 'Drill-through Error',
+                        error: data.error || 'Failed to fetch drill-through data'
+                    });
+                }
+            } catch (error) {
+                console.error('Drill-through error:', error);
+                showDrillDownModal({
+                    name: 'Drill-through Error',
+                    error: error.message || 'Network error'
+                });
+            }
+        }
+        
+        // Show drill-through data in modal
+        function showDrillThroughModal(drillData) {
+            let modal = document.getElementById('drilldown-modal');
+            if (!modal) {
+                modal = createDrillDownModal();
+            }
+            
+            const titleEl = document.getElementById('drilldown-title');
+            const bodyEl = document.getElementById('drilldown-body');
+            
+            // Build breadcrumb navigation
+            let breadcrumb = '';
+            if (drillThroughStack.length > 0) {
+                breadcrumb = `<div class="drill-breadcrumb">
+                    <span class="breadcrumb-item" onclick="closeDrillDownModal()">Merged Dashboard</span>
+                    ${drillThroughStack.map((item, idx) => `
+                        <span class="breadcrumb-separator">→</span>
+                        <span class="breadcrumb-item ${idx === drillThroughStack.length - 1 ? 'active' : ''}" 
+                              ${idx < drillThroughStack.length - 1 ? `onclick="navigateToDrillLevel(${idx})"` : ''}>
+                            ${escapeHtml(item.name)}
+                        </span>
+                    `).join('')}
+                </div>`;
+            }
+            
+            titleEl.innerHTML = `${escapeHtml(drillData.name)} <span class="drill-type-badge">${drillData.type}</span>`;
+            
+            let content = breadcrumb;
+            
+            // Show applied filters
+            if (drillData.applied_filters && Object.keys(drillData.applied_filters).length > 0) {
+                content += `<div class="drill-filters-applied">
+                    <strong>Filters Applied:</strong>
+                    ${Object.entries(drillData.applied_filters).map(([k, v]) => `
+                        <span class="filter-tag">${escapeHtml(k)}: ${escapeHtml(String(v))}</span>
+                    `).join('')}
+                </div>`;
+            }
+            
+            // Render cards from the drill-through dashboard
+            if (drillData.cards && drillData.cards.length > 0) {
+                content += `<div class="drill-cards-grid">`;
+                
+                drillData.cards.forEach((card, idx) => {
+                    const hasClickBehavior = card.click_behavior && card.click_behavior.targetId;
+                    content += `
+                        <div class="drill-card ${hasClickBehavior ? 'has-click-behavior' : ''}" 
+                             data-drill-card-idx="${idx}"
+                             ${hasClickBehavior ? `onclick="handleDrillCardClick(${idx})" style="cursor: pointer;"` : ''}>
+                            <div class="drill-card-header">
+                                <span class="drill-card-title">${escapeHtml(card.name)}</span>
+                                <span class="drill-card-type">${card.display}${hasClickBehavior ? ' <span style="color: var(--accent-blue);">↗</span>' : ''}</span>
+                            </div>
+                            <div class="drill-card-body">
+                                ${renderDrillCardContent(card, idx)}
+                            </div>
+                        </div>
+                    `;
+                });
+                
+                content += `</div>`;
+                
+                // Store drill cards for click handling
+                window.drillCardsData = drillData.cards;
+            } else if (drillData.data) {
+                // Single question result
+                content += renderDrillDataTable(drillData.data, drillData.columns);
+            } else {
+                content += '<p class="no-data">No data available</p>';
+            }
+            
+            bodyEl.innerHTML = content;
+            modal.classList.add('active');
+            
+            // Initialize any charts in drill-through cards
+            setTimeout(() => {
+                if (drillData.cards) {
+                    drillData.cards.forEach((card, idx) => {
+                        initDrillChart(card, idx);
+                    });
+                }
+            }, 100);
+        }
+        
+        // Handle click on a card within drill-through modal (for multi-level drill)
+        function handleDrillCardClick(cardIdx) {
+            const card = window.drillCardsData ? window.drillCardsData[cardIdx] : null;
+            if (!card) return;
+            
+            if (card.click_behavior && card.click_behavior.targetId) {
+                const cb = card.click_behavior;
+                const targetType = cb.linkType || 'dashboard';
+                const targetId = cb.targetId;
+                
+                // Build filter params from clicked card's data
+                let filterParams = {};
+                if (card.data && card.data.rows && card.data.rows[0]) {
+                    const cols = card.data.cols || [];
+                    const firstRow = card.data.rows[0];
+                    
+                    // Use first column as filter (simplified)
+                    if (cols[0] && firstRow[0] !== undefined) {
+                        filterParams[cols[0].name || 'filter'] = firstRow[0];
+                    }
+                }
+                
+                // Perform next level drill-through
+                performDrillThrough(targetType, targetId, filterParams, card.name);
+            }
+        }
+        window.handleDrillCardClick = handleDrillCardClick;
+        
+        // Navigate back to a specific drill level
+        function navigateToDrillLevel(levelIdx) {
+            if (levelIdx < 0 || levelIdx >= drillThroughStack.length - 1) return;
+            
+            // Pop stack to the desired level
+            const targetLevel = drillThroughStack[levelIdx];
+            drillThroughStack = drillThroughStack.slice(0, levelIdx);
+            
+            // Re-fetch that level's data
+            performDrillThrough(targetLevel.type, targetLevel.id, targetLevel.filters, targetLevel.name);
+        }
+        window.navigateToDrillLevel = navigateToDrillLevel;
+        
+        // Render content for a drill-through card
+        function renderDrillCardContent(card, idx) {
+            const displayType = card.display || 'table';
+            const data = card.data;
+            
+            if (!data || !data.rows || data.rows.length === 0) {
+                return '<div class="no-data">No data</div>';
+            }
+            
+            if (displayType === 'scalar' || displayType === 'number') {
+                const value = data.rows[0][data.rows[0].length - 1];
+                return `<div class="drill-scalar-value">${formatNumber(value)}</div>`;
+            } else if (displayType === 'table') {
+                return renderDrillDataTable(data, card.columns, 10); // Show first 10 rows
+            } else if (displayType === 'pie' || displayType === 'bar' || displayType === 'row' || displayType === 'line') {
+                return `<div class="drill-chart-container" id="drill-chart-${idx}"></div>`;
+            } else {
+                return `<div class="no-data">${data.rows.length} rows</div>`;
+            }
+        }
+        
+        // Render data as table for drill-through
+        function renderDrillDataTable(data, columns, maxRows = 50) {
+            if (!data || !data.rows || data.rows.length === 0) {
+                return '<div class="no-data">No data</div>';
+            }
+            
+            const cols = data.cols || columns || [];
+            const rows = data.rows.slice(0, maxRows);
+            const totalRows = data.rows.length;
+            
+            return `
+                <div class="drill-table-container">
+                    <table class="drill-table">
+                        <thead>
+                            <tr>
+                                ${cols.map(col => `<th>${escapeHtml(col.display_name || col.name || 'Column')}</th>`).join('')}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${rows.map(row => `
+                                <tr>
+                                    ${row.map((cell, i) => `<td>${formatCellValue(cell)}</td>`).join('')}
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                    ${totalRows > maxRows ? `<div class="table-footer">Showing ${maxRows} of ${totalRows} rows</div>` : ''}
+                </div>
+            `;
+        }
+        
+        // Initialize chart for drill-through card
+        function initDrillChart(card, idx) {
+            const container = document.getElementById(`drill-chart-${idx}`);
+            if (!container || !card.data || !card.data.rows) return;
+            
+            const displayType = card.display || 'table';
+            const data = card.data;
+            
+            // Simple chart rendering using Chart.js
+            const canvas = document.createElement('canvas');
+            canvas.id = `drill-canvas-${idx}`;
+            canvas.style.maxHeight = '200px';
+            container.appendChild(canvas);
+            
+            const labels = data.rows.map(r => r[0]);
+            const values = data.rows.map(r => r[r.length - 1]);
+            
+            const chartType = displayType === 'pie' ? 'pie' : (displayType === 'line' ? 'line' : 'bar');
+            
+            new Chart(canvas, {
+                type: chartType,
+                data: {
+                    labels: labels.slice(0, 10),
+                    datasets: [{
+                        data: values.slice(0, 10),
+                        backgroundColor: [
+                            '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6',
+                            '#06b6d4', '#ec4899', '#84cc16', '#f97316', '#6366f1'
+                        ]
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: displayType === 'pie' } }
+                }
+            });
+        }
+        
+        // Show card's own data in modal (when no click behavior)
+        function showCardDataModal(card) {
+            let modal = document.getElementById('drilldown-modal');
+            if (!modal) {
+                modal = createDrillDownModal();
+            }
+            
+            const titleEl = document.getElementById('drilldown-title');
+            const bodyEl = document.getElementById('drilldown-body');
+            
+            titleEl.textContent = card.name || 'Card Details';
+            
+            let content = '';
+            
+            // Card info
+            content += `<div class="drilldown-info">
+                <p><strong>Type:</strong> ${card.display || 'Unknown'}</p>
+                <p><strong>Sources:</strong> ${card.source_count || currentMergedDashboard?.source_count || 'N/A'} dashboards merged</p>
+            </div>`;
+            
+            // Show data
+            if (card.data && card.data.rows && card.data.rows.length > 0) {
+                content += renderDrillDataTable(card.data, card.columns, 100);
+            } else {
+                content += '<p class="no-data">No data available</p>';
+            }
+            
+            bodyEl.innerHTML = content;
+            modal.classList.add('active');
+        }
+        
+        // Create drill-down modal
+        function createDrillDownModal() {
+            const modal = document.createElement('div');
+            modal.id = 'drilldown-modal';
+            modal.className = 'modal';
+            modal.innerHTML = `
+                <div class="modal-content" style="max-width: 1100px; max-height: 85vh; overflow: auto;">
+                    <div class="modal-header">
+                        <h2 id="drilldown-title">Details</h2>
+                        <button class="close-btn" onclick="closeDrillDownModal()">&times;</button>
+                    </div>
+                    <div class="modal-body" id="drilldown-body"></div>
+                </div>
+            `;
+            document.body.appendChild(modal);
+            return modal;
+        }
+        
+        // Show drill-down modal (generic)
+        function showDrillDownModal(options) {
+            let modal = document.getElementById('drilldown-modal');
+            if (!modal) {
+                modal = createDrillDownModal();
+            }
+            
+            const titleEl = document.getElementById('drilldown-title');
+            const bodyEl = document.getElementById('drilldown-body');
+            
+            titleEl.textContent = options.name || 'Details';
+            
+            if (options.loading) {
+                bodyEl.innerHTML = `<div class="drill-loading">
+                    <div class="spinner"></div>
+                    <p>Fetching drill-through data...</p>
+                </div>`;
+            } else if (options.error) {
+                bodyEl.innerHTML = `<div class="drill-error">
+                    <p style="color: var(--accent-red);">Error: ${escapeHtml(options.error)}</p>
+                </div>`;
+            }
+            
+            modal.classList.add('active');
+        }
+        
+        // Close drill-down modal
+        function closeDrillDownModal() {
+            const modal = document.getElementById('drilldown-modal');
+            if (modal) {
+                modal.classList.remove('active');
+            }
+            // Reset drill-through stack
+            drillThroughStack = [];
+            window.drillCardsData = null;
+        }
+        
+        // Make closeDrillDownModal globally accessible
+        window.closeDrillDownModal = closeDrillDownModal;
+        
+        // Close modal when clicking outside
+        document.addEventListener('click', function(e) {
+            const modal = document.getElementById('drilldown-modal');
+            if (modal && modal.classList.contains('active')) {
+                if (e.target === modal) {
+                    closeDrillDownModal();
+                }
+            }
+        });
+        
+        // Close modal with Escape key
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') {
+                closeDrillDownModal();
+            }
+        });
+        
+        // Format cell value for display
+        function formatCellValue(value) {
+            if (value === null || value === undefined) return '<span class="null-value">-</span>';
+            if (typeof value === 'number') {
+                return value.toLocaleString();
+            }
+            if (typeof value === 'boolean') {
+                return value ? 'Yes' : 'No';
+            }
+            const str = String(value);
+            if (str.length > 50) {
+                return `<span title="${escapeHtml(str)}">${escapeHtml(str.substring(0, 47))}...</span>`;
+            }
+            return escapeHtml(str);
+        }
+        
+        // Render card content based on type
+        function renderCardContent(card, displayType, cardId, cardIdx) {
+            if (displayType === 'scalar' || displayType === 'number' || displayType === 'progress') {
+                return renderScalarCard(card, cardIdx);
+            } else if (displayType === 'table') {
+                return renderMergedTable(card.data, cardIdx);
+            } else if (displayType === 'pie' || displayType === 'bar' || displayType === 'row' || displayType === 'line' || displayType === 'area') {
+                // Chart container - actual chart will be rendered by init functions
+                return `<div class="chart-container"></div>`;
+            } else {
+                // Fallback for other chart types
+                const rowCount = card.data?.rows?.length || 0;
+                return `
+                    <div class="no-data">
+                        <p style="font-size: 1.2rem; margin-bottom: 0.5rem;">${displayType.toUpperCase()}</p>
+                        <p>${rowCount} data points</p>
+                    </div>
+                `;
+            }
+        }
+        
+        // Render scalar/number card
+        function renderScalarCard(card, cardIdx) {
+            const data = card.data;
+            if (!data || !data.rows || data.rows.length === 0) {
+                return '<div class="no-data">No data</div>';
+            }
+            
+            // Get the value - typically last column of first row
+            const row = data.rows[0];
+            let value = row[row.length - 1];
+            let label = row[0];
+            
+            // If value is null, try other columns
+            if (value === null && row.length > 1) {
+                for (let i = row.length - 1; i >= 0; i--) {
+                    if (row[i] !== null && typeof row[i] === 'number') {
+                        value = row[i];
+                        break;
+                    }
+                }
+            }
+            
+            const formattedValue = typeof value === 'number' ? value.toLocaleString() : (value ?? 'N/A');
+            const sizeClass = String(formattedValue).length > 6 ? 'small' : '';
+            const hasClick = card.click_behavior && card.click_behavior.type;
+            
+            return `<div class="merged-card-value ${sizeClass} ${hasClick ? 'clickable' : ''}">${formattedValue}</div>`;
+        }
+        
+        // Initialize Pie Chart with Chart.js
+        function initPieChart(card, idx) {
+            console.log('initPieChart called for card', idx, card.name, card.data);
+            const canvasId = `pie-chart-${idx}-${Date.now()}`;
+            const container = document.querySelector(`[data-card-index="${idx}"] .chart-container`);
+            if (!container) {
+                console.log('No container found for card', idx);
+                return;
+            }
+            
+            const data = card.data;
+            if (!data || !data.rows || data.rows.length === 0) {
+                console.log('No data for pie chart', idx, data);
+                container.innerHTML = '<div class="no-data">No data</div>';
+                return;
+            }
+            
+            console.log('Pie chart data rows:', data.rows);
+            
+            // Create canvas
+            container.innerHTML = `<canvas id="${canvasId}" style="width: 100%; height: 250px;"></canvas>`;
+            const canvas = document.getElementById(canvasId);
+            if (!canvas) {
+                console.log('Canvas not found', canvasId);
+                return;
+            }
+            
+            const labels = data.rows.map(row => String(row[0] || 'Unknown'));
+            const values = data.rows.map(row => row[1] || 0);
+            const colors = data.rows.map((_, i) => chartColors[i % chartColors.length]);
+            
+            const ctx = canvas.getContext('2d');
+            chartInstances[canvasId] = new Chart(ctx, {
+                type: 'pie',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        data: values,
+                        backgroundColor: colors,
+                        borderColor: '#1a1a24',
+                        borderWidth: 2
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'right',
+                            labels: {
+                                color: '#94a3b8',
+                                font: { size: 11 },
+                                padding: 10,
+                                boxWidth: 12
+                            }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                                    const value = context.raw;
+                                    const percent = ((value / total) * 100).toFixed(1);
+                                    return `${context.label}: ${value.toLocaleString()} (${percent}%)`;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+        
+        // Initialize Bar Chart with Chart.js
+        function initBarChart(card, idx, displayType) {
+            const canvasId = `bar-chart-${idx}-${Date.now()}`;
+            const container = document.querySelector(`[data-card-index="${idx}"] .chart-container`);
+            if (!container) return;
+            
+            const data = card.data;
+            if (!data || !data.rows || data.rows.length === 0) {
+                container.innerHTML = '<div class="no-data">No data</div>';
+                return;
+            }
+            
+            // Create canvas
+            container.innerHTML = `<canvas id="${canvasId}"></canvas>`;
+            const canvas = document.getElementById(canvasId);
+            if (!canvas) return;
+            
+            // Limit to top 15 items for readability
+            const sortedRows = [...data.rows].sort((a, b) => (b[1] || 0) - (a[1] || 0)).slice(0, 15);
+            const labels = sortedRows.map(row => String(row[0] || 'Unknown'));
+            const values = sortedRows.map(row => row[1] || 0);
+            
+            const ctx = canvas.getContext('2d');
+            const isHorizontal = displayType === 'row';
+            
+            chartInstances[canvasId] = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        data: values,
+                        backgroundColor: chartColors[0],
+                        borderColor: chartColors[0],
+                        borderWidth: 0,
+                        borderRadius: 4
+                    }]
+                },
+                options: {
+                    indexAxis: isHorizontal ? 'y' : 'x',
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return context.raw.toLocaleString();
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            grid: { color: 'rgba(255,255,255,0.05)' },
+                            ticks: { 
+                                color: '#94a3b8',
+                                font: { size: 10 },
+                                maxRotation: 45
+                            }
+                        },
+                        y: {
+                            grid: { color: 'rgba(255,255,255,0.05)' },
+                            ticks: { 
+                                color: '#94a3b8',
+                                font: { size: 10 }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+        
+        // Initialize Line Chart with Chart.js
+        function initLineChart(card, idx) {
+            const canvasId = `line-chart-${idx}-${Date.now()}`;
+            const container = document.querySelector(`[data-card-index="${idx}"] .chart-container`);
+            if (!container) return;
+            
+            const data = card.data;
+            if (!data || !data.rows || data.rows.length === 0) {
+                container.innerHTML = '<div class="no-data">No data</div>';
+                return;
+            }
+            
+            // Create canvas
+            container.innerHTML = `<canvas id="${canvasId}"></canvas>`;
+            const canvas = document.getElementById(canvasId);
+            if (!canvas) return;
+            
+            const labels = data.rows.map(row => String(row[0] || ''));
+            const values = data.rows.map(row => row[1] || 0);
+            
+            const ctx = canvas.getContext('2d');
+            chartInstances[canvasId] = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        data: values,
+                        borderColor: chartColors[0],
+                        backgroundColor: chartColors[0] + '33',
+                        fill: true,
+                        tension: 0.3,
+                        pointRadius: 3,
+                        pointBackgroundColor: chartColors[0]
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false }
+                    },
+                    scales: {
+                        x: {
+                            grid: { color: 'rgba(255,255,255,0.05)' },
+                            ticks: { color: '#94a3b8', font: { size: 10 } }
+                        },
+                        y: {
+                            grid: { color: 'rgba(255,255,255,0.05)' },
+                            ticks: { color: '#94a3b8', font: { size: 10 } }
+                        }
+                    }
+                }
+            });
+        }
+        
+        // Render table data
+        function renderMergedTable(data, cardIdx) {
+            if (!data || !data.rows || data.rows.length === 0) {
+                return '<div class="no-data">No data</div>';
+            }
+            
+            const cols = data.cols || [];
+            const rows = data.rows.slice(0, 100); // Limit to 100 rows for display
+            const hasMore = data.rows.length > 100;
+            const card = window.mergedCardsData ? window.mergedCardsData[cardIdx] : null;
+            const hasClickBehavior = card && card.click_behavior && card.click_behavior.type;
+            
+            let html = '<div class="table-container"><table class="merged-card-table"><thead><tr>';
+            
+            // Headers
+            if (cols.length > 0) {
+                cols.forEach(col => {
+                    html += `<th>${escapeHtml(col.display_name || col.name || 'Column')}</th>`;
+                });
+            } else if (rows.length > 0) {
+                // Generate generic headers if cols not provided
+                rows[0].forEach((_, i) => {
+                    html += `<th>Column ${i + 1}</th>`;
+                });
+            }
+            html += '</tr></thead><tbody>';
+            
+            // Rows
+            rows.forEach((row, rowIdx) => {
+                const rowClass = hasClickBehavior ? 'clickable-row' : '';
+                const rowClick = hasClickBehavior ? `onclick="handleTableRowClick(${cardIdx}, ${rowIdx}, event)"` : '';
+                html += `<tr class="${rowClass}" ${rowClick}>`;
+                row.forEach((cell, colIdx) => {
+                    let value = cell === null ? '' : cell;
+                    // Format numbers
+                    if (typeof value === 'number') {
+                        value = value.toLocaleString();
+                    }
+                    // Truncate long strings
+                    if (typeof value === 'string' && value.length > 50) {
+                        value = `<span title="${escapeHtml(cell)}">${escapeHtml(value.substring(0, 47))}...</span>`;
+                    } else {
+                        value = escapeHtml(String(value));
+                    }
+                    html += `<td>${value}</td>`;
+                });
+                html += '</tr>';
+            });
+            
+            html += '</tbody></table></div>';
+            
+            if (hasMore) {
+                html += `<div class="table-footer">Showing 100 of ${data.rows.length.toLocaleString()} rows</div>`;
+            }
+            
+            return html;
+        }
+        
+        // Handle table row click
+        function handleTableRowClick(cardIdx, rowIdx, event) {
+            event.stopPropagation();
+            const card = window.mergedCardsData[cardIdx];
+            if (!card || !card.data || !card.data.rows) return;
+            
+            const row = card.data.rows[rowIdx];
+            const cols = card.data.cols || [];
+            
+            // Build row data object
+            const rowData = {};
+            cols.forEach((col, i) => {
+                rowData[col.name || col.display_name || `col${i}`] = row[i];
+            });
+            
+            console.log('Table row clicked:', rowData);
+            showRowDetailModal(card, rowData, cols, row);
+        }
+        
+        // Show row detail modal
+        function showRowDetailModal(card, rowData, cols, row) {
+            let modal = document.getElementById('drilldown-modal');
+            if (!modal) {
+                modal = document.createElement('div');
+                modal.id = 'drilldown-modal';
+                modal.className = 'modal';
+                modal.innerHTML = `
+                    <div class="modal-content" style="max-width: 600px;">
+                        <div class="modal-header">
+                            <h2 id="drilldown-title">Row Details</h2>
+                            <button class="close-btn" onclick="closeDrillDownModal()">&times;</button>
+                        </div>
+                        <div class="modal-body" id="drilldown-body"></div>
+                    </div>
+                `;
+                document.body.appendChild(modal);
+            }
+            
+            const titleEl = document.getElementById('drilldown-title');
+            const bodyEl = document.getElementById('drilldown-body');
+            
+            titleEl.textContent = `${card.name || 'Row'} - Details`;
+            
+            let content = '<div class="row-details">';
+            cols.forEach((col, i) => {
+                const colName = col.display_name || col.name || `Column ${i + 1}`;
+                const value = row[i];
+                content += `
+                    <div class="detail-row">
+                        <span class="detail-label">${escapeHtml(colName)}</span>
+                        <span class="detail-value">${formatCellValue(value)}</span>
+                    </div>
+                `;
+            });
+            content += '</div>';
+            
+            bodyEl.innerHTML = content;
+            modal.classList.add('active');
+        }
+        
+        // Close merged dashboard viewer
+        function closeMergedViewer() {
+            const modal = document.getElementById('merged-viewer-modal');
+            modal.classList.remove('active');
+            document.body.style.overflow = '';
+            
+            // Cleanup chart instances
+            Object.values(chartInstances).forEach(chart => {
+                try { chart.destroy(); } catch(e) {}
+            });
+            chartInstances = {};
+            
+            currentMergedDashboard = null;
+            currentMergedTabId = null;
         }
 
         // Close modal on Escape key
@@ -1951,6 +4294,7 @@
             fetchConfig();
             fetchDashboardCounts();
             checkMongoDBStatus();
+            loadMergedDashboards();
         }
 
         // Check MongoDB connection status
@@ -2121,16 +4465,651 @@
         });
 
         // Initialize
-        document.addEventListener('DOMContentLoaded', () => {
-            refreshData();
+        document.addEventListener('DOMContentLoaded', async () => {
+            // Check authentication first
+            await checkAuthStatus();
             
-            // Update countdown every second
-            countdownInterval = setInterval(updateCountdown, 1000);
-            
-            // Refresh data every 5 seconds
-            setInterval(refreshData, 5000);
+            // Only start data refresh if authenticated (or auth not configured)
+            const mainContent = document.getElementById('main-content');
+            if (!mainContent.classList.contains('hidden')) {
+                refreshData();
+                
+                // Update countdown every second
+                countdownInterval = setInterval(updateCountdown, 1000);
+                
+                // Refresh data every 5 seconds
+                setInterval(refreshData, 5000);
+            }
         });
     </script>
+    </div> <!-- End of main-content -->
+
+    <!-- Merged Dashboard Viewer Modal -->
+    <div id="merged-viewer-modal" class="merged-viewer-modal">
+        <div class="merged-viewer-header">
+            <div style="display: flex; align-items: center; gap: 2rem;">
+                <div>
+                    <div class="merged-viewer-title" id="merged-viewer-title">Merged Dashboard</div>
+                    <div class="merged-viewer-meta" id="merged-viewer-meta">Loading...</div>
+                </div>
+                <!-- Filters Section -->
+                <div class="merged-filters" id="merged-filters" style="display: none;">
+                    <!-- Filters will be rendered here -->
+                </div>
+            </div>
+            <button class="merged-viewer-close" onclick="closeMergedViewer()">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M19 12H5M12 19l-7-7 7-7"/>
+                </svg>
+                Back
+            </button>
+        </div>
+        <!-- Tabs Navigation -->
+        <div class="merged-tabs" id="merged-tabs" style="display: none;">
+            <!-- Tabs will be rendered here -->
+        </div>
+        <div class="merged-viewer-body">
+            <div class="merged-cards-grid" id="merged-cards-grid">
+                <div class="merged-card-loading">Loading dashboard data...</div>
+            </div>
+        </div>
+    </div>
+    
+    <style>
+        /* Merged Dashboard Tabs */
+        .merged-tabs {
+            display: flex;
+            gap: 0;
+            padding: 0 2rem;
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border-color);
+        }
+        .merged-tab {
+            padding: 0.75rem 1.5rem;
+            background: transparent;
+            border: none;
+            color: var(--text-secondary);
+            cursor: pointer;
+            font-size: 0.9rem;
+            border-bottom: 2px solid transparent;
+            transition: all 0.2s;
+        }
+        .merged-tab:hover {
+            color: var(--text-primary);
+            background: var(--bg-hover);
+        }
+        .merged-tab.active {
+            color: var(--accent-blue);
+            border-bottom-color: var(--accent-blue);
+        }
+        
+        /* Filters */
+        .merged-filters {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            flex-wrap: wrap;
+        }
+        .merged-filter-group {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .merged-filter-label {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+        }
+        .merged-filter-select {
+            padding: 0.4rem 0.75rem;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            color: var(--text-primary);
+            font-size: 0.85rem;
+            min-width: 120px;
+        }
+        .merged-filter-select:focus {
+            outline: none;
+            border-color: var(--accent-blue);
+        }
+        
+        /* Improved card grid with proper sizing - Metabase uses 24 columns */
+        .merged-cards-grid {
+            display: grid;
+            grid-template-columns: repeat(24, 1fr);
+            gap: 1rem;
+            padding: 1.5rem 2rem;
+            align-items: start;
+        }
+        
+        .merged-card {
+            background: var(--bg-card);
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .merged-card-header {
+            padding: 0.75rem 1rem;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: var(--bg-secondary);
+        }
+        
+        .merged-card-title {
+            font-weight: 500;
+            font-size: 0.9rem;
+            color: var(--text-primary);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 70%;
+        }
+        
+        .merged-card-type {
+            font-size: 0.7rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            white-space: nowrap;
+        }
+        
+        .merged-card-body {
+            flex: 1;
+            padding: 1rem;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            min-height: 150px;
+        }
+        
+        /* Scalar/Number cards */
+        .merged-card-value {
+            font-size: 2.5rem;
+            font-weight: 700;
+            color: var(--accent-blue);
+            text-align: center;
+        }
+        .merged-card-value.small {
+            font-size: 1.8rem;
+        }
+        
+        /* Chart containers */
+        .chart-container {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            min-height: 200px;
+        }
+        .chart-container canvas {
+            max-width: 100%;
+            max-height: 300px;
+        }
+        
+        /* Table styling */
+        .table-container {
+            overflow-x: auto;
+            max-height: 350px;
+            overflow-y: auto;
+        }
+        .merged-card-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.8rem;
+        }
+        .merged-card-table th {
+            background: var(--bg-secondary);
+            padding: 0.5rem 0.75rem;
+            text-align: left;
+            font-weight: 600;
+            color: var(--text-secondary);
+            border-bottom: 1px solid var(--border-color);
+            position: sticky;
+            top: 0;
+            z-index: 1;
+        }
+        .merged-card-table td {
+            padding: 0.4rem 0.75rem;
+            border-bottom: 1px solid var(--border-color);
+            color: var(--text-primary);
+        }
+        .merged-card-table tr:hover td {
+            background: var(--bg-hover);
+        }
+        .table-footer {
+            text-align: center;
+            padding: 0.5rem;
+            color: var(--text-muted);
+            font-size: 0.75rem;
+            background: var(--bg-secondary);
+        }
+        
+        /* Click behavior styles */
+        .has-click-behavior, .clickable-card {
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        .has-click-behavior:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 20px rgba(59, 130, 246, 0.3);
+        }
+        .clickable-card:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 2px 10px rgba(255, 255, 255, 0.1);
+        }
+        .merged-card-value.clickable {
+            cursor: pointer;
+        }
+        .merged-card-value.clickable:hover {
+            color: #60a5fa;
+        }
+        .clickable-row {
+            cursor: pointer;
+        }
+        .clickable-row:hover td {
+            background: rgba(59, 130, 246, 0.1) !important;
+        }
+        
+        /* Drilldown modal styles */
+        #drilldown-modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.7);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 10000;
+            padding: 2rem;
+        }
+        #drilldown-modal.active {
+            display: flex;
+        }
+        #drilldown-modal .modal-content {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            width: 100%;
+            max-width: 900px;
+            max-height: 80vh;
+            overflow: auto;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+        }
+        #drilldown-modal .modal-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 1.25rem 1.5rem;
+            border-bottom: 1px solid var(--border-color);
+            position: sticky;
+            top: 0;
+            background: var(--bg-card);
+            z-index: 1;
+        }
+        #drilldown-modal .modal-header h2 {
+            margin: 0;
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+        #drilldown-modal .close-btn {
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            font-size: 1.5rem;
+            cursor: pointer;
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+            line-height: 1;
+        }
+        #drilldown-modal .close-btn:hover {
+            background: var(--bg-hover);
+            color: var(--text-primary);
+        }
+        #drilldown-modal .modal-body {
+            padding: 1.5rem;
+        }
+        .drilldown-info {
+            background: var(--bg-secondary);
+            padding: 1rem;
+            border-radius: 8px;
+            margin-bottom: 1rem;
+            border-left: 3px solid var(--accent-blue);
+        }
+        .drilldown-info p {
+            margin: 0.25rem 0;
+        }
+        .drilldown-section {
+            margin-bottom: 1.5rem;
+        }
+        .drilldown-section h3 {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+            margin-bottom: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .source-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+        .source-list li {
+            padding: 0.5rem 0.75rem;
+            background: var(--bg-secondary);
+            margin-bottom: 0.25rem;
+            border-radius: 4px;
+        }
+        .row-details {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+        .detail-row {
+            display: flex;
+            justify-content: space-between;
+        }
+        
+        /* Drill-through specific styles */
+        .drill-breadcrumb {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.75rem 1rem;
+            background: var(--bg-secondary);
+            border-radius: 8px;
+            margin-bottom: 1rem;
+            flex-wrap: wrap;
+        }
+        .breadcrumb-item {
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+            cursor: pointer;
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+            transition: all 0.2s;
+        }
+        .breadcrumb-item:hover:not(.active) {
+            background: var(--bg-hover);
+            color: var(--accent-blue);
+        }
+        .breadcrumb-item.active {
+            color: var(--text-primary);
+            font-weight: 500;
+            cursor: default;
+        }
+        .breadcrumb-separator {
+            color: var(--text-muted);
+            font-size: 0.75rem;
+        }
+        
+        .drill-type-badge {
+            font-size: 0.65rem;
+            padding: 0.2rem 0.5rem;
+            background: var(--accent-blue);
+            color: white;
+            border-radius: 4px;
+            text-transform: uppercase;
+            margin-left: 0.5rem;
+            vertical-align: middle;
+        }
+        
+        .drill-filters-applied {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.75rem 1rem;
+            background: rgba(59, 130, 246, 0.1);
+            border: 1px solid rgba(59, 130, 246, 0.3);
+            border-radius: 8px;
+            margin-bottom: 1rem;
+            flex-wrap: wrap;
+        }
+        .filter-tag {
+            background: var(--accent-blue);
+            color: white;
+            padding: 0.25rem 0.75rem;
+            border-radius: 100px;
+            font-size: 0.8rem;
+        }
+        
+        .drill-cards-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 1rem;
+        }
+        
+        .drill-card {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            overflow: hidden;
+            transition: all 0.2s;
+        }
+        .drill-card.has-click-behavior {
+            cursor: pointer;
+        }
+        .drill-card.has-click-behavior:hover {
+            border-color: var(--accent-blue);
+            box-shadow: 0 4px 15px rgba(59, 130, 246, 0.2);
+        }
+        
+        .drill-card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.75rem 1rem;
+            background: var(--bg-card);
+            border-bottom: 1px solid var(--border-color);
+        }
+        .drill-card-title {
+            font-weight: 500;
+            font-size: 0.85rem;
+            color: var(--text-primary);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 70%;
+        }
+        .drill-card-type {
+            font-size: 0.65rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+        }
+        
+        .drill-card-body {
+            padding: 1rem;
+            min-height: 100px;
+        }
+        
+        .drill-scalar-value {
+            font-size: 2rem;
+            font-weight: 700;
+            color: var(--accent-blue);
+            text-align: center;
+            padding: 1rem;
+        }
+        
+        .drill-chart-container {
+            height: 200px;
+            position: relative;
+        }
+        
+        .drill-table-container {
+            max-height: 300px;
+            overflow: auto;
+        }
+        .drill-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.8rem;
+        }
+        .drill-table th {
+            background: var(--bg-card);
+            padding: 0.5rem 0.75rem;
+            text-align: left;
+            font-weight: 600;
+            color: var(--text-secondary);
+            border-bottom: 1px solid var(--border-color);
+            position: sticky;
+            top: 0;
+        }
+        .drill-table td {
+            padding: 0.4rem 0.75rem;
+            border-bottom: 1px solid var(--border-color);
+            color: var(--text-primary);
+        }
+        .drill-table tr:hover td {
+            background: var(--bg-hover);
+        }
+        
+        .drill-loading {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 3rem;
+            gap: 1rem;
+        }
+        .drill-loading .spinner {
+            width: 40px;
+            height: 40px;
+            border: 3px solid var(--border-color);
+            border-top-color: var(--accent-blue);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        
+        .drill-error {
+            padding: 2rem;
+            text-align: center;
+            padding: 0.75rem;
+            background: var(--bg-secondary);
+            border-radius: 6px;
+        }
+        .detail-label {
+            color: var(--text-secondary);
+            font-weight: 500;
+        }
+        .detail-value {
+            color: var(--text-primary);
+            text-align: right;
+            max-width: 60%;
+            word-break: break-word;
+        }
+        .null-value {
+            color: var(--text-muted);
+            font-style: italic;
+        }
+        .merged-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.85rem;
+        }
+        .merged-table th {
+            background: var(--bg-tertiary);
+            padding: 0.6rem 0.75rem;
+            text-align: left;
+            font-weight: 600;
+            color: var(--text-secondary);
+            border-bottom: 2px solid var(--border-color);
+        }
+        .merged-table td {
+            padding: 0.5rem 0.75rem;
+            border-bottom: 1px solid var(--border-color);
+        }
+        .merged-table tr:hover td {
+            background: var(--bg-hover);
+        }
+        
+        /* Bar/Row chart list style */
+        .bar-chart-list {
+            padding: 0.5rem 0;
+        }
+        .bar-chart-item {
+            margin-bottom: 0.75rem;
+        }
+        .bar-chart-label-row {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.8rem;
+            margin-bottom: 0.25rem;
+        }
+        .bar-chart-label {
+            color: var(--text-secondary);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 70%;
+        }
+        .bar-chart-value {
+            color: var(--text-primary);
+            font-weight: 600;
+        }
+        .bar-chart-bar {
+            background: var(--bg-secondary);
+            border-radius: 4px;
+            height: 8px;
+            overflow: hidden;
+        }
+        .bar-chart-fill {
+            height: 100%;
+            border-radius: 4px;
+            transition: width 0.3s ease;
+        }
+        
+        /* Source breakdown popup */
+        .source-breakdown {
+            position: absolute;
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 1rem;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+            z-index: 100;
+            min-width: 200px;
+        }
+        .source-breakdown-title {
+            font-weight: 600;
+            margin-bottom: 0.75rem;
+            color: var(--text-primary);
+        }
+        .source-breakdown-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 0.25rem 0;
+            font-size: 0.85rem;
+        }
+        .source-breakdown-name {
+            color: var(--text-secondary);
+        }
+        .source-breakdown-value {
+            color: var(--text-primary);
+            font-weight: 500;
+        }
+        
+        /* Loading state */
+        .merged-card-loading {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 150px;
+            color: var(--text-muted);
+        }
+        
+        /* No data state */
+        .no-data {
+            text-align: center;
+            padding: 2rem;
+            color: var(--text-muted);
+        }
+    </style>
 
     <!-- Settings Modal -->
     <div class="modal-overlay" id="settings-modal">
