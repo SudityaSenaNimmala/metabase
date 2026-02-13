@@ -64,10 +64,12 @@ class MongoDBStorage:
     
     def _connect(self):
         """Connect to MongoDB"""
-        # Default MongoDB connection string (can be overridden by environment variable)
-        DEFAULT_MONGODB_URI = "mongodb+srv://sudityanimmala_db_user:1ckKshSh3rcJBjLj@metabase.crnrwej.mongodb.net/?appName=Metabase"
+        # Get MongoDB URI from environment variable (required)
+        mongodb_uri = os.environ.get('MONGODB_URI')
         
-        mongodb_uri = os.environ.get('MONGODB_URI', DEFAULT_MONGODB_URI)
+        if not mongodb_uri:
+            logging.error("MONGODB_URI environment variable is not set!")
+            return
         
         try:
             from pymongo import MongoClient

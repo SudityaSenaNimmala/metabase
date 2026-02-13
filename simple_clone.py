@@ -26,8 +26,14 @@ def load_config():
     """Load configuration from MongoDB"""
     try:
         from pymongo import MongoClient
-        MONGODB_URI = "mongodb+srv://sudityanimmala_db_user:1ckKshSh3rcJBjLj@metabase.crnrwej.mongodb.net/?appName=Metabase"
-        client = MongoClient(MONGODB_URI, serverSelectionTimeoutMS=5000)
+        
+        # Get MongoDB URI from environment variable (required)
+        mongodb_uri = os.environ.get('MONGODB_URI')
+        if not mongodb_uri:
+            print("Error: MONGODB_URI environment variable is not set!")
+            return None
+            
+        client = MongoClient(mongodb_uri, serverSelectionTimeoutMS=5000)
         db = client['metabase_dashboard_service']
         doc = db['config'].find_one({'key': 'metabase_config'})
         if doc and doc.get('value'):
