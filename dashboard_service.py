@@ -69,19 +69,19 @@ class MongoDBStorage:
         
         mongodb_uri = os.environ.get('MONGODB_URI', DEFAULT_MONGODB_URI)
         
-            try:
-                from pymongo import MongoClient
+        try:
+            from pymongo import MongoClient
             logging.info(f"Connecting to MongoDB...")
-                self.mongo_client = MongoClient(mongodb_uri, serverSelectionTimeoutMS=5000)
-                # Test connection
-                self.mongo_client.admin.command('ping')
+            self.mongo_client = MongoClient(mongodb_uri, serverSelectionTimeoutMS=5000)
+            # Test connection
+            self.mongo_client.admin.command('ping')
             self.db = self.mongo_client['metabase_dashboard_service']
             self.connected = True
             logging.info("Connected to MongoDB successfully")
             
             # Create indexes for better performance
             self._create_indexes()
-            except Exception as e:
+        except Exception as e:
             logging.error(f"Failed to connect to MongoDB: {e}")
             self.connected = False
     
@@ -112,7 +112,7 @@ class MongoDBStorage:
             self.db['merged_dashboards'].create_index([('created_at', -1)])
             
             logging.info("MongoDB indexes created")
-            except Exception as e:
+        except Exception as e:
             logging.warning(f"Could not create indexes: {e}")
     
     def is_connected(self) -> bool:
@@ -176,7 +176,7 @@ class MongoDBStorage:
             )
             logging.info(f"MongoDB set_config '{key}': matched={result.matched_count}, modified={result.modified_count}, upserted={result.upserted_id}")
             return True
-            except Exception as e:
+        except Exception as e:
             logging.error(f"Failed to set config '{key}': {e}")
             import traceback
             traceback.print_exc()
@@ -233,10 +233,10 @@ class MongoDBStorage:
         try:
             # Fetch entries
             cursor = self.db['activity_log'].find().limit(limit * 2)
-                entries = []
-                for doc in cursor:
-                    doc.pop('_id', None)
-                    entries.append(doc)
+            entries = []
+            for doc in cursor:
+                doc.pop('_id', None)
+                entries.append(doc)
             
             # Sort by timestamp properly (normalize Z suffix for consistent sorting)
             def normalize_timestamp(ts):
@@ -246,7 +246,7 @@ class MongoDBStorage:
             entries.sort(key=lambda x: normalize_timestamp(x.get('timestamp', '')), reverse=True)
             
             return entries[:limit]
-            except Exception as e:
+        except Exception as e:
             logging.error(f"Failed to get activity logs: {e}")
             return []
     
@@ -260,9 +260,6 @@ class MongoDBStorage:
         except Exception as e:
             logging.error(f"Failed to count activity logs: {e}")
             return 0
-        except Exception as e:
-            logging.error(f"Failed to get activity logs: {e}")
-            return []
     
     def get_activity_stats(self) -> dict:
         """Get activity log statistics"""
@@ -270,36 +267,36 @@ class MongoDBStorage:
             return {"total": 0, "success": 0, "failed": 0, "deleted": 0, "by_type": {"content": 0, "message": 0, "email": 0}}
         
         try:
-                pipeline = [
-                    {
-                        '$group': {
-                            '_id': None,
-                            'total': {'$sum': 1},
-                            'success': {'$sum': {'$cond': [{'$eq': ['$status', 'success']}, 1, 0]}},
-                            'deleted': {'$sum': {'$cond': [{'$eq': ['$status', 'deleted']}, 1, 0]}},
-                            'failed': {'$sum': {'$cond': [{'$eq': ['$status', 'failed']}, 1, 0]}},
-                            'content': {'$sum': {'$cond': [{'$and': [{'$eq': ['$status', 'success']}, {'$eq': ['$db_type', 'content']}]}, 1, 0]}},
-                            'message': {'$sum': {'$cond': [{'$and': [{'$eq': ['$status', 'success']}, {'$eq': ['$db_type', 'message']}]}, 1, 0]}},
-                            'email': {'$sum': {'$cond': [{'$and': [{'$eq': ['$status', 'success']}, {'$eq': ['$db_type', 'email']}]}, 1, 0]}}
-                        }
+            pipeline = [
+                {
+                    '$group': {
+                        '_id': None,
+                        'total': {'$sum': 1},
+                        'success': {'$sum': {'$cond': [{'$eq': ['$status', 'success']}, 1, 0]}},
+                        'deleted': {'$sum': {'$cond': [{'$eq': ['$status', 'deleted']}, 1, 0]}},
+                        'failed': {'$sum': {'$cond': [{'$eq': ['$status', 'failed']}, 1, 0]}},
+                        'content': {'$sum': {'$cond': [{'$and': [{'$eq': ['$status', 'success']}, {'$eq': ['$db_type', 'content']}]}, 1, 0]}},
+                        'message': {'$sum': {'$cond': [{'$and': [{'$eq': ['$status', 'success']}, {'$eq': ['$db_type', 'message']}]}, 1, 0]}},
+                        'email': {'$sum': {'$cond': [{'$and': [{'$eq': ['$status', 'success']}, {'$eq': ['$db_type', 'email']}]}, 1, 0]}}
                     }
-                ]
+                }
+            ]
             result = list(self.db['activity_log'].aggregate(pipeline))
-                if result:
-                    r = result[0]
-                    return {
-                        "total": r.get('total', 0),
-                        "success": r.get('success', 0),
-                        "failed": r.get('failed', 0),
-                        "deleted": r.get('deleted', 0),
-                        "by_type": {
-                            "content": r.get('content', 0),
-                            "message": r.get('message', 0),
-                            "email": r.get('email', 0)
-                        }
+            if result:
+                r = result[0]
+                return {
+                    "total": r.get('total', 0),
+                    "success": r.get('success', 0),
+                    "failed": r.get('failed', 0),
+                    "deleted": r.get('deleted', 0),
+                    "by_type": {
+                        "content": r.get('content', 0),
+                        "message": r.get('message', 0),
+                        "email": r.get('email', 0)
                     }
+                }
             return {"total": 0, "success": 0, "failed": 0, "deleted": 0, "by_type": {"content": 0, "message": 0, "email": 0}}
-            except Exception as e:
+        except Exception as e:
             logging.error(f"Failed to get activity stats: {e}")
             return {"total": 0, "success": 0, "failed": 0, "deleted": 0, "by_type": {"content": 0, "message": 0, "email": 0}}
     
