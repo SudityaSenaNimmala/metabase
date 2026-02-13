@@ -1171,7 +1171,11 @@ def auth_login():
         return jsonify({"error": "OAuth not configured. Set MICROSOFT_CLIENT_ID, MICROSOFT_CLIENT_SECRET, and MICROSOFT_TENANT_ID environment variables."}), 500
     
     # Get the redirect URI from the request
-    redirect_uri = request.url_root.rstrip('/') + REDIRECT_PATH
+    # Force HTTPS in production (when behind a proxy like Render)
+    url_root = request.url_root.rstrip('/')
+    if url_root.startswith('http://') and not ('localhost' in url_root or '127.0.0.1' in url_root):
+        url_root = url_root.replace('http://', 'https://', 1)
+    redirect_uri = url_root + REDIRECT_PATH
     
     # Generate auth URL
     auth_url = msal_app.get_authorization_request_url(
@@ -1200,7 +1204,11 @@ def auth_callback():
         return redirect(f'/?error={error}')
     
     # Get redirect URI (must match the one used in login)
-    redirect_uri = request.url_root.rstrip('/') + REDIRECT_PATH
+    # Force HTTPS in production (when behind a proxy like Render)
+    url_root = request.url_root.rstrip('/')
+    if url_root.startswith('http://') and not ('localhost' in url_root or '127.0.0.1' in url_root):
+        url_root = url_root.replace('http://', 'https://', 1)
+    redirect_uri = url_root + REDIRECT_PATH
     
     try:
         # Exchange code for token
