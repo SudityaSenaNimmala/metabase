@@ -1,0 +1,982 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Metabase Dashboard Auto-Clone Tool - User Guide</title>
+    <style>
+        body {
+            font-family: 'Calibri', 'Arial', sans-serif;
+            line-height: 1.6;
+            margin: 40px;
+            color: #000000;
+        }
+        h1 {
+            color: #1F4E78;
+            font-size: 28pt;
+            border-bottom: 3px solid #1F4E78;
+            padding-bottom: 10px;
+            margin-top: 30px;
+        }
+        h2 {
+            color: #2E75B6;
+            font-size: 18pt;
+            margin-top: 25px;
+            margin-bottom: 10px;
+        }
+        h3 {
+            color: #3A5F8A;
+            font-size: 14pt;
+            margin-top: 20px;
+            margin-bottom: 8px;
+        }
+        p {
+            margin: 10px 0;
+            text-align: justify;
+        }
+        ul, ol {
+            margin: 10px 0 10px 30px;
+        }
+        li {
+            margin: 5px 0;
+        }
+        .highlight {
+            background-color: #FFF2CC;
+            padding: 2px 6px;
+            border-radius: 3px;
+        }
+        .important {
+            background-color: #FCE4D6;
+            padding: 10px;
+            border-left: 4px solid #C65911;
+            margin: 15px 0;
+        }
+        .tip {
+            background-color: #E2F0D9;
+            padding: 10px;
+            border-left: 4px solid #70AD47;
+            margin: 15px 0;
+        }
+        .warning {
+            background-color: #FFF2CC;
+            padding: 10px;
+            border-left: 4px solid #ED7D31;
+            margin: 15px 0;
+        }
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            margin: 15px 0;
+        }
+        th {
+            background-color: #1F4E78;
+            color: white;
+            padding: 10px;
+            text-align: left;
+            font-weight: bold;
+        }
+        td {
+            border: 1px solid #BFBFBF;
+            padding: 8px;
+        }
+        tr:nth-child(even) {
+            background-color: #F2F2F2;
+        }
+        code {
+            background-color: #F4F4F4;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Courier New', monospace;
+            font-size: 10pt;
+        }
+        .toc {
+            background-color: #F2F2F2;
+            padding: 20px;
+            border-radius: 5px;
+            margin: 20px 0;
+        }
+        .toc ul {
+            list-style-type: none;
+            margin-left: 0;
+        }
+        .toc a {
+            color: #1F4E78;
+            text-decoration: none;
+        }
+        .toc a:hover {
+            text-decoration: underline;
+        }
+        .badge {
+            display: inline-block;
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-size: 9pt;
+            font-weight: bold;
+            color: white;
+        }
+        .badge-green { background-color: #70AD47; }
+        .badge-purple { background-color: #7030A0; }
+        .badge-orange { background-color: #ED7D31; }
+        .page-break {
+            page-break-after: always;
+        }
+    </style>
+</head>
+<body>
+
+<h1>Metabase Dashboard Auto-Clone Tool</h1>
+<h2 style="color: #7F7F7F; font-style: italic; border: none;">User Guide for CloudFuze Migration Managers</h2>
+
+<div class="toc">
+    <h2 style="margin-top: 0;">Table of Contents</h2>
+    <ul>
+        <li><a href="#overview">1. Overview</a></li>
+        <li><a href="#what-it-does">2. What This Tool Does</a></li>
+        <li><a href="#features">3. Key Features</a></li>
+        <li><a href="#getting-started">4. Getting Started</a></li>
+        <li><a href="#dashboard-types">5. Dashboard Types</a></li>
+        <li><a href="#using-tool">6. Using the Tool</a></li>
+        <li><a href="#management">7. Dashboard Management</a></li>
+        <li><a href="#activity-logs">8. Activity Logs</a></li>
+        <li><a href="#merge">9. Merge Dashboards</a></li>
+        <li><a href="#troubleshooting">10. Troubleshooting</a></li>
+        <li><a href="#best-practices">11. Best Practices</a></li>
+        <li><a href="#support">12. Support and Contact</a></li>
+    </ul>
+</div>
+
+<div class="page-break"></div>
+
+<h2 id="overview">1. Overview</h2>
+
+<p>The <strong>Metabase Dashboard Auto-Clone Tool</strong> is a web-based application designed for migration managers to automate the creation and management of customer-specific Metabase dashboards. Instead of manually creating dashboards for each customer migration, this tool automatically clones pre-configured source dashboards and maintains them throughout the migration lifecycle.</p>
+
+<div class="tip">
+    <strong>💡 Quick Summary:</strong> This tool saves hours of manual work by automatically creating and managing Metabase dashboards for each CloudFuze customer migration, ensuring consistent reporting across all migration projects.
+</div>
+
+<h2 id="what-it-does">2. What This Tool Does</h2>
+
+<h3>Primary Function</h3>
+<p>The tool monitors your MongoDB database for new customer migrations and automatically clones the appropriate Metabase dashboards for each customer based on their migration type (Content, Message, or Email).</p>
+
+<h3>How It Works</h3>
+<ol>
+    <li><strong>Auto-Detection:</strong> The tool continuously checks MongoDB for new customers who need dashboards</li>
+    <li><strong>Automatic Cloning:</strong> When a new customer is detected, it automatically clones the appropriate source dashboard</li>
+    <li><strong>Organization:</strong> Creates a dedicated collection in Metabase for each customer</li>
+    <li><strong>URL Assignment:</strong> Generates and stores unique Metabase URLs for easy access</li>
+    <li><strong>Activity Tracking:</strong> Logs all operations for audit and troubleshooting purposes</li>
+</ol>
+
+<div class="page-break"></div>
+
+<h2 id="features">3. Key Features</h2>
+
+<table>
+    <tr>
+        <th>Feature</th>
+        <th>Description</th>
+        <th>Benefit</th>
+    </tr>
+    <tr>
+        <td><strong>Automatic Dashboard Cloning</strong></td>
+        <td>Runs scheduled checks every 4 hours and creates dashboards automatically</td>
+        <td>No manual intervention needed for routine operations</td>
+    </tr>
+    <tr>
+        <td><strong>Manual Run Option</strong></td>
+        <td>Trigger immediate dashboard creation on-demand</td>
+        <td>Instant setup for urgent customer onboarding</td>
+    </tr>
+    <tr>
+        <td><strong>Dashboard Update</strong></td>
+        <td>Refresh dashboards to get latest changes from source templates</td>
+        <td>Keep all customer dashboards in sync with latest improvements</td>
+    </tr>
+    <tr>
+        <td><strong>Dashboard Delete</strong></td>
+        <td>Remove dashboards and all associated data</td>
+        <td>Clean up after completed migrations</td>
+    </tr>
+    <tr>
+        <td><strong>Dashboard Rename</strong></td>
+        <td>Edit dashboard names that sync with Metabase</td>
+        <td>Keep names current with customer changes</td>
+    </tr>
+    <tr>
+        <td><strong>Progress Tracking</strong></td>
+        <td>Visual progress bars during operations</td>
+        <td>Know exactly what's happening in real-time</td>
+    </tr>
+    <tr>
+        <td><strong>Activity Logging</strong></td>
+        <td>Complete history of all operations with user attribution</td>
+        <td>Full audit trail for compliance and troubleshooting</td>
+    </tr>
+    <tr>
+        <td><strong>Dashboard Merging</strong></td>
+        <td>Combine multiple dashboards into unified view</td>
+        <td>Single dashboard for customers with multiple migration types</td>
+    </tr>
+</table>
+
+<div class="page-break"></div>
+
+<h2 id="getting-started">4. Getting Started</h2>
+
+<h3>Accessing the Tool</h3>
+<ol>
+    <li>Navigate to the tool's URL: <code>https://metabase-ye4o.onrender.com/</code></li>
+    <li>Click the <strong>"Sign in with Microsoft"</strong> button</li>
+    <li>Sign in with your CloudFuze Microsoft account (<code>@cloudfuze.com</code> email)</li>
+    <li>You'll be redirected to the main dashboard view after successful authentication</li>
+</ol>
+
+<div style="text-align: center; margin: 20px 0;">
+    <img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==" alt="Login Screen" style="max-width: 600px; border: 1px solid #BFBFBF; border-radius: 8px;">
+    <p style="font-size: 9pt; color: #7F7F7F; font-style: italic;">Login Screen - Sign in with your CloudFuze Microsoft account</p>
+</div>
+
+<div class="important">
+    <strong>⚠️ Important:</strong> Only CloudFuze email accounts (<code>@cloudfuze.com</code>) are allowed to access this tool. Contact CloudFuze IT support if you cannot log in.
+</div>
+
+<h3>Initial Setup (Admin Only)</h3>
+<p>The tool is pre-configured by CloudFuze administrators. Regular users do not need to perform any setup - simply log in and start using the tool.</p>
+
+<div class="page-break"></div>
+
+<h2 id="dashboard-types">5. Dashboard Types</h2>
+
+<p>The tool supports three types of customer migrations, each with its own color coding:</p>
+
+<h3><span class="badge badge-green">CONTENT</span> Content Dashboards</h3>
+<ul>
+    <li><strong>Purpose:</strong> Track customers migrating content and files</li>
+    <li><strong>Metrics:</strong> Files migrated, folders processed, transfer rates, storage utilization</li>
+    <li><strong>Color:</strong> Green indicator</li>
+</ul>
+
+<h3><span class="badge badge-purple">MESSAGE</span> Message Dashboards</h3>
+<ul>
+    <li><strong>Purpose:</strong> Monitor customers migrating messaging data</li>
+    <li><strong>Metrics:</strong> Message counts, conversation threads, user activities, channel migrations</li>
+    <li><strong>Color:</strong> Purple indicator</li>
+</ul>
+
+<h3><span class="badge badge-orange">EMAIL</span> Email Dashboards</h3>
+<ul>
+    <li><strong>Purpose:</strong> Track customers migrating email data</li>
+    <li><strong>Metrics:</strong> Mailbox migrations, email counts, attachment processing, folder structures</li>
+    <li><strong>Color:</strong> Orange indicator</li>
+</ul>
+
+<div class="tip">
+    <strong>💡 Tip:</strong> Color indicators help you quickly identify dashboard types at a glance. This is especially useful when managing multiple customer migrations simultaneously.
+</div>
+
+<div class="page-break"></div>
+
+<h2 id="using-tool">6. Using the Tool</h2>
+
+<h3>Home Dashboard View</h3>
+<p>When you open the tool, you'll see:</p>
+<ul>
+    <li><strong>Header:</strong> Your profile picture and navigation options</li>
+    <li><strong>Dashboard Count Cards:</strong> Visual summary showing total dashboards by type</li>
+    <li><strong>Manual Run Button:</strong> "Run Now" button to trigger immediate dashboard creation</li>
+    <li><strong>Dashboard List:</strong> Grid view of all existing customer dashboards</li>
+</ul>
+
+<h3>Performing a Manual Run</h3>
+
+<p>To manually trigger dashboard creation:</p>
+
+<ol>
+    <li>Click the <strong>"Run Now"</strong> button in the top section</li>
+    <li>The tool will:
+        <ul>
+            <li>Check MongoDB for customers without dashboards</li>
+            <li>Create missing dashboards automatically</li>
+            <li>Show progress notifications for each creation</li>
+        </ul>
+    </li>
+    <li>Wait for the completion notification</li>
+    <li>New dashboards will appear in the list automatically</li>
+</ol>
+
+<div class="warning">
+    <strong>⚠️ When to Use Manual Run:</strong>
+    <ul>
+        <li>Immediately after adding a new customer to MongoDB</li>
+        <li>After updating source dashboard templates</li>
+        <li>When scheduled run frequency is not sufficient</li>
+        <li>For urgent customer onboarding requirements</li>
+    </ul>
+</div>
+
+<h3>Understanding Dashboard Cards</h3>
+
+<p>Each dashboard card displays:</p>
+<ul>
+    <li><strong>Dashboard Name:</strong> Customer name with dashboard type</li>
+    <li><strong>Description:</strong> "No description" (can be updated in Metabase)</li>
+    <li><strong>ID Number:</strong> Unique Metabase dashboard identifier</li>
+    <li><strong>Type Badge:</strong> Color-coded badge (CONTENT/MESSAGE/EMAIL)</li>
+    <li><strong>Action Icons:</strong> Edit, Delete, and Update icons</li>
+    <li><strong>Open Button:</strong> Blue button to view dashboard in Metabase</li>
+</ul>
+
+<div class="page-break"></div>
+
+<h2 id="management">7. Dashboard Management</h2>
+
+<h3>Viewing a Dashboard</h3>
+
+<p><strong>Steps:</strong></p>
+<ol>
+    <li>Locate the customer dashboard in the list</li>
+    <li>Click the <strong>"Open"</strong> button (blue button at bottom)</li>
+    <li>Dashboard opens in a new tab in Metabase</li>
+    <li>Interact with the dashboard as needed (filters, drill-throughs, exports)</li>
+</ol>
+
+<h3>Updating a Dashboard</h3>
+
+<p>Use this feature when source templates have been updated and you want to refresh a customer's dashboard with the latest changes.</p>
+
+<p><strong>Steps:</strong></p>
+<ol>
+    <li>Click the <strong>Update</strong> icon (🔄 circular arrows) on the dashboard card</li>
+    <li>The card flips to show a confirmation message explaining the update process</li>
+    <li>Review the message and click <strong>"Proceed"</strong> to continue or <strong>"Cancel"</strong> to abort</li>
+    <li>If you proceed:
+        <ul>
+            <li>Card flips to show a progress view with progress bar</li>
+            <li>Progress bar updates in real-time showing completion percentage</li>
+            <li>Status messages show current step (e.g., "Cloning dashboard", "Creating questions")</li>
+            <li>Estimated time: 2-5 minutes depending on dashboard complexity</li>
+        </ul>
+    </li>
+    <li><strong>Optional:</strong> Click "Cancel Update" button anytime to abort the operation</li>
+    <li>On completion:
+        <ul>
+            <li>Card automatically flips back to normal view</li>
+            <li>Dashboard list refreshes with updated data</li>
+            <li>Activity log records the update with your name</li>
+        </ul>
+    </li>
+</ol>
+
+<div class="important">
+    <strong>🔒 Safety Features:</strong>
+    <ul>
+        <li>The update process is <strong>safe</strong> - the old dashboard remains intact until the new one is successfully cloned</li>
+        <li>If update fails or is cancelled, the original dashboard stays active</li>
+        <li>No data loss risk during update operations</li>
+        <li>All linked dashboards and questions are updated together</li>
+    </ul>
+</div>
+
+<div class="page-break"></div>
+
+<h3>Deleting a Dashboard</h3>
+
+<p>Use this feature to permanently remove a customer's dashboard after migration completion or project cancellation.</p>
+
+<p><strong>Steps:</strong></p>
+<ol>
+    <li>Click the <strong>Delete</strong> icon (🗑️ trash bin) on the dashboard card</li>
+    <li>Card flips to show delete confirmation with warning message</li>
+    <li>Read the warning: <span class="highlight">"This action cannot be undone"</span></li>
+    <li>Click <strong>"Delete"</strong> to proceed or <strong>"Cancel"</strong> to abort</li>
+    <li>If confirmed:
+        <ul>
+            <li>Dashboard is removed from Metabase immediately</li>
+            <li>All associated questions/cards are deleted</li>
+            <li>Customer collection is removed</li>
+            <li>Dashboard disappears from the list</li>
+            <li>Activity log records the deletion with your name</li>
+        </ul>
+    </li>
+</ol>
+
+<div class="warning">
+    <strong>⚠️ What Gets Deleted:</strong>
+    <ul>
+        <li>The main customer dashboard</li>
+        <li>All linked/drill-through dashboards</li>
+        <li>All questions/cards in the customer collection</li>
+        <li>The customer collection itself</li>
+        <li>All references in the tool's database</li>
+    </ul>
+</div>
+
+<div class="important">
+    <strong>⚠️ Before Deleting:</strong>
+    <ul>
+        <li>Confirm the migration is complete</li>
+        <li>Export any needed data from Metabase for records</li>
+        <li>Notify relevant stakeholders</li>
+        <li>Verify you're deleting the correct dashboard</li>
+    </ul>
+</div>
+
+<div class="page-break"></div>
+
+<h3>Renaming a Dashboard</h3>
+
+<p>Use this feature to update the dashboard name (e.g., when customer company name changes).</p>
+
+<p><strong>Steps:</strong></p>
+<ol>
+    <li>Click the <strong>Edit</strong> icon (✏️ pencil) on the dashboard card</li>
+    <li>Card flips to show edit form with input field</li>
+    <li>Current dashboard name is pre-filled in the input field</li>
+    <li>Type the new name (or edit the existing name)</li>
+    <li>Click <strong>"Save"</strong> to update or <strong>"Cancel"</strong> to abort</li>
+    <li>If saved:
+        <ul>
+            <li>Name updates in Metabase immediately</li>
+            <li>Card flips back to show new name</li>
+            <li>Dashboard list refreshes automatically</li>
+            <li>Activity log records the rename showing "Old Name → New Name"</li>
+        </ul>
+    </li>
+</ol>
+
+<div class="tip">
+    <strong>💡 Naming Best Practices:</strong>
+    <ul>
+        <li>Use consistent customer name format across all dashboards</li>
+        <li>Include migration type in the name for clarity</li>
+        <li>Keep names concise but descriptive</li>
+        <li>Example: "Contoso Corporation - Content Dashboard"</li>
+    </ul>
+</div>
+
+<div class="page-break"></div>
+
+<h2 id="activity-logs">8. Activity Logs</h2>
+
+<h3>Viewing Activity Logs</h3>
+
+<ol>
+    <li>Click the <strong>"Activity Log"</strong> button in the top navigation bar</li>
+    <li>A modal window opens displaying all historical operations</li>
+    <li>Logs are sorted by timestamp (newest first)</li>
+</ol>
+
+<h3>Understanding Log Entries</h3>
+
+<p>Each log entry contains:</p>
+
+<table>
+    <tr>
+        <th>Field</th>
+        <th>Description</th>
+    </tr>
+    <tr>
+        <td><strong>Timestamp</strong></td>
+        <td>Date and time when the operation occurred</td>
+    </tr>
+    <tr>
+        <td><strong>Status Icon</strong></td>
+        <td>
+            ✓ (Green) = Success<br>
+            🗑️ (Yellow) = Deleted<br>
+            🔄 (Blue) = Updated<br>
+            ✏️ (Blue) = Renamed<br>
+            ✗ (Red) = Failed
+        </td>
+    </tr>
+    <tr>
+        <td><strong>Customer Name</strong></td>
+        <td>Which customer the operation affected</td>
+    </tr>
+    <tr>
+        <td><strong>Dashboard Type</strong></td>
+        <td>Content, Message, or Email</td>
+    </tr>
+    <tr>
+        <td><strong>Dashboard Name</strong></td>
+        <td>Name of the dashboard</td>
+    </tr>
+    <tr>
+        <td><strong>Performed By</strong></td>
+        <td>
+            🤖 Auto-Clone = Automated scheduled run<br>
+            👤 [email] = Manual operation by specific user
+        </td>
+    </tr>
+    <tr>
+        <td><strong>Action Link</strong></td>
+        <td>"Open →" link for successful operations</td>
+    </tr>
+</table>
+
+<h3>Filtering Logs</h3>
+
+<p>Use the dropdown filters at the top of the log modal:</p>
+<ul>
+    <li><strong>Status Filter:</strong> Success, Deleted, Updated, Renamed, Failed, All</li>
+    <li><strong>Type Filter:</strong> Content, Message, Email, All</li>
+</ul>
+
+<div class="page-break"></div>
+
+<h3>Log Entry Examples</h3>
+
+<p><strong>Example 1: Successful Auto-Clone</strong></p>
+<code>
+2024-02-10 10:30:25 AM<br>
+✓ Contoso - Content Dashboard<br>
+Performed by: 🤖 Auto-Clone<br>
+[Open →]
+</code>
+
+<p><strong>Example 2: Manual Update</strong></p>
+<code>
+2024-02-10 02:45:10 PM<br>
+🔄 Fabrikam - Email Dashboard<br>
+Performed by: 👤 john.doe@company.com<br>
+[Open →]
+</code>
+
+<p><strong>Example 3: Dashboard Rename</strong></p>
+<code>
+2024-02-10 03:15:45 PM<br>
+✏️ Contoso Inc → Contoso Corporation<br>
+Performed by: 👤 jane.smith@company.com<br>
+[Open →]
+</code>
+
+<p><strong>Example 4: Failed Operation</strong></p>
+<code>
+2024-02-10 04:20:15 PM<br>
+✗ Northwind - Message Dashboard<br>
+Performed by: 🤖 Auto-Clone<br>
+Error: Source dashboard not found
+</code>
+
+<div class="tip">
+    <strong>💡 Using Logs for Troubleshooting:</strong>
+    <ul>
+        <li>Failed operations show error messages - read these carefully</li>
+        <li>Check the timestamp to correlate with when issues were reported</li>
+        <li>Filter by "Failed" status to quickly find all errors</li>
+        <li>Use "Performed by" to identify if issue was auto or manual</li>
+    </ul>
+</div>
+
+<div class="page-break"></div>
+
+<h2 id="merge">9. Merge Dashboards</h2>
+
+<h3>What is Dashboard Merging?</h3>
+
+<p>The merge feature allows you to combine multiple customer dashboards into a single unified dashboard. This is useful when a customer has multiple migration types running simultaneously.</p>
+
+<h3>When to Use Merge</h3>
+
+<ul>
+    <li>Customer has multiple migration types (e.g., both Content and Email)</li>
+    <li>Need a consolidated view across all customer data</li>
+    <li>Want to create custom dashboard combinations for reporting</li>
+    <li>Executive dashboard showing complete migration status</li>
+</ul>
+
+<h3>How to Merge Dashboards</h3>
+
+<p><strong>Steps:</strong></p>
+<ol>
+    <li>Click the <strong>"Merge Dashboards"</strong> button in the navigation</li>
+    <li><strong>Select Dashboards:</strong>
+        <ul>
+            <li>Click the "+" icon in the top-right corner of each dashboard you want to merge</li>
+            <li>Selected dashboards show a blue checkmark</li>
+            <li>Click the "+" icon again to deselect if needed</li>
+            <li>Must select at least 2 dashboards to proceed</li>
+        </ul>
+    </li>
+    <li><strong>Enter Merge Name:</strong>
+        <ul>
+            <li>Type a descriptive name in the toolbar input field</li>
+            <li>Example: "Contoso - Complete Migration View"</li>
+            <li>Example: "Q1 2024 - All Migrations Summary"</li>
+        </ul>
+    </li>
+    <li>Click <strong>"Merge Selected"</strong> button in the toolbar</li>
+    <li>Wait for merge completion (usually 30-60 seconds)</li>
+    <li>Success notification appears when complete</li>
+    <li>New merged dashboard appears in the "Merged" tab</li>
+</ol>
+
+<div class="page-break"></div>
+
+<h3>Managing Merged Dashboards</h3>
+
+<p>Merged dashboards have their own dedicated section:</p>
+
+<ol>
+    <li>Click the <strong>"Merged"</strong> tab in the navigation</li>
+    <li>View all your merged dashboards</li>
+    <li>Each merged card shows:
+        <ul>
+            <li>Merged dashboard name</li>
+            <li>List of source dashboards that were combined</li>
+            <li>Creation date</li>
+            <li>Your standard action buttons</li>
+        </ul>
+    </li>
+</ol>
+
+<p><strong>Available Actions on Merged Dashboards:</strong></p>
+<ul>
+    <li><strong>Open:</strong> View the merged dashboard in Metabase</li>
+    <li><strong>Rename:</strong> Change the merged dashboard name</li>
+    <li><strong>Delete:</strong> Remove the merged dashboard</li>
+</ul>
+
+<div class="important">
+    <strong>🔒 Important:</strong> Deleting a merged dashboard does NOT affect the source dashboards. Source dashboards remain intact and can be merged again if needed.
+</div>
+
+<div class="page-break"></div>
+
+<h2 id="troubleshooting">10. Troubleshooting</h2>
+
+<h3>Dashboard Not Appearing After Manual Run</h3>
+
+<p><strong>Possible Causes:</strong></p>
+<ul>
+    <li>Customer data not properly configured in MongoDB</li>
+    <li>Customer already has a dashboard assigned</li>
+    <li>Source dashboard not configured for that migration type</li>
+    <li>Database connection issue</li>
+</ul>
+
+<p><strong>Solutions:</strong></p>
+<ol>
+    <li>Check MongoDB to verify customer entry exists</li>
+    <li>Verify customer has <code>dashboard_id</code> field set to null (or not set)</li>
+    <li>Check Activity Log for error messages</li>
+    <li>Contact CloudFuze IT support to verify source dashboard configuration</li>
+    <li>Wait 2-3 minutes and refresh the page</li>
+</ol>
+
+<h3>Update Operation Failed</h3>
+
+<p><strong>Possible Causes:</strong></p>
+<ul>
+    <li>Network connectivity issues</li>
+    <li>Metabase API timeout (dashboard too complex)</li>
+    <li>Source dashboard was deleted or modified</li>
+    <li>Insufficient Metabase permissions</li>
+</ul>
+
+<p><strong>Solutions:</strong></p>
+<ol>
+    <li>Check Activity Log for specific error details</li>
+    <li>Wait 5 minutes and try the update again</li>
+    <li>Verify source dashboard still exists in Metabase</li>
+    <li>Check network connection stability</li>
+    <li>Contact CloudFuze IT support if error persists after retry</li>
+</ol>
+
+<div class="page-break"></div>
+
+<h3>Cannot Open Dashboard (404 Error)</h3>
+
+<p><strong>Possible Causes:</strong></p>
+<ul>
+    <li>Dashboard was manually deleted from Metabase</li>
+    <li>URL is outdated or corrupted</li>
+    <li>Metabase permissions changed</li>
+    <li>Metabase server is down</li>
+</ul>
+
+<p><strong>Solutions:</strong></p>
+<ol>
+    <li>Try updating the dashboard to regenerate the URL</li>
+    <li>Check if dashboard exists in Metabase manually</li>
+    <li>Contact CloudFuze IT support to verify Metabase access permissions</li>
+    <li>Check if Metabase is accessible (try opening Metabase directly)</li>
+</ol>
+
+<h3>Progress Bar Stuck During Update</h3>
+
+<p><strong>Possible Causes:</strong></p>
+<ul>
+    <li>Very large dashboard taking longer than expected</li>
+    <li>Backend process crashed</li>
+    <li>Network timeout</li>
+    <li>Metabase API not responding</li>
+</ul>
+
+<p><strong>Solutions:</strong></p>
+<ol>
+    <li>Wait 5-10 minutes - some complex dashboards take time</li>
+    <li>Click "Cancel Update" button to abort the operation</li>
+    <li>Refresh the browser page</li>
+    <li>Check Activity Log to see if operation completed</li>
+    <li>Try the operation again</li>
+    <li>Contact CloudFuze IT support if problem persists</li>
+</ol>
+
+<h3>Authentication Issues</h3>
+
+<p><strong>Possible Causes:</strong></p>
+<ul>
+    <li>Session expired (logged in too long)</li>
+    <li>Azure AD configuration changed</li>
+    <li>Network connectivity issues</li>
+    <li>Browser cookies disabled</li>
+</ul>
+
+<p><strong>Solutions:</strong></p>
+<ol>
+    <li>Refresh the page and try again</li>
+    <li>Clear browser cache and cookies</li>
+    <li>Try logging out and logging in again</li>
+    <li>Try a different browser (Chrome, Edge, Firefox)</li>
+    <li>Contact CloudFuze IT support if problem persists</li>
+</ol>
+
+<div class="page-break"></div>
+
+<h2 id="best-practices">11. Best Practices</h2>
+
+<h3>For Daily Operations</h3>
+
+<div class="tip">
+    <strong>✅ Do's:</strong>
+    <ul>
+        <li>Check Activity Log daily for any failed operations</li>
+        <li>Monitor auto-clone successes to ensure system is running</li>
+        <li>Review dashboard list weekly to identify completed migrations</li>
+        <li>Keep dashboard names current with customer information</li>
+        <li>Use manual run after bulk customer imports to MongoDB</li>
+    </ul>
+</div>
+
+<div class="warning">
+    <strong>❌ Don'ts:</strong>
+    <ul>
+        <li>Don't delete dashboards for active migrations</li>
+        <li>Don't update dashboards during business hours when customers are viewing them</li>
+        <li>Don't rename dashboards without notifying the team</li>
+        <li>Don't ignore failed operations in activity log</li>
+        <li>Don't perform bulk operations without admin approval</li>
+    </ul>
+</div>
+
+<h3>For Dashboard Management</h3>
+
+<p><strong>Before Updating:</strong></p>
+<ul>
+    <li>Verify the update is necessary (has source template changed?)</li>
+    <li>Check if anyone is currently using the dashboard</li>
+    <li>Schedule updates during low-usage times (evenings, weekends)</li>
+    <li>Test updates on non-critical dashboards first</li>
+</ul>
+
+<p><strong>Before Deleting:</strong></p>
+<ul>
+    <li>Confirm migration is 100% complete</li>
+    <li>Export any needed data from Metabase for records</li>
+    <li>Notify relevant stakeholders (account manager, project team)</li>
+    <li>Document the deletion in your project records</li>
+</ul>
+
+<p><strong>Naming Conventions:</strong></p>
+<ul>
+    <li>Use format: "[Customer Name] - [Type] Dashboard"</li>
+    <li>Example: "Contoso Corporation - Content Dashboard"</li>
+    <li>For merged: "[Customer Name] - Combined Migration View"</li>
+    <li>Keep names under 50 characters when possible</li>
+</ul>
+
+<div class="page-break"></div>
+
+<h3>For Troubleshooting</h3>
+
+<ol>
+    <li><strong>Always Check Activity Logs First</strong>
+        <ul>
+            <li>90% of issues have logged error messages</li>
+            <li>Helps identify patterns in failures</li>
+            <li>Shows exactly when problem occurred</li>
+        </ul>
+    </li>
+    <li><strong>Document Recurring Issues</strong>
+        <ul>
+            <li>Note exact steps that led to problem</li>
+            <li>Take screenshots if helpful</li>
+            <li>Share findings with team and admin</li>
+        </ul>
+    </li>
+    <li><strong>Test on Non-Critical Dashboards</strong>
+        <ul>
+            <li>Use test customer dashboards when available</li>
+            <li>Verify results before applying to production</li>
+        </ul>
+    </li>
+</ol>
+
+<h3>For Team Collaboration</h3>
+
+<ul>
+    <li><strong>Communication:</strong> Inform CloudFuze migration team before making bulk changes</li>
+    <li><strong>Documentation:</strong> Keep notes on any custom dashboard modifications</li>
+    <li><strong>Consistency:</strong> Follow CloudFuze naming and organization standards</li>
+    <li><strong>Transparency:</strong> Activity logs track all actions - be accountable</li>
+</ul>
+
+<div class="page-break"></div>
+
+<h2 id="support">12. Support and Contact</h2>
+
+<h3>Getting Help</h3>
+
+<p><strong>Step 1: Self-Help Resources</strong></p>
+<ul>
+    <li>Check this documentation first - most questions are covered</li>
+    <li>Review Activity Logs for error messages</li>
+    <li>Search for similar issues in team knowledge base</li>
+</ul>
+
+<p><strong>Step 2: Team Support</strong></p>
+<ul>
+    <li>Ask experienced team members who use the tool daily</li>
+    <li>Consult with your team lead or senior migration managers</li>
+    <li>Check CloudFuze internal communication channels</li>
+</ul>
+
+<p><strong>Step 3: CloudFuze IT Support</strong></p>
+<ul>
+    <li>For configuration issues</li>
+    <li>For access/permissions problems</li>
+    <li>For feature requests</li>
+    <li>For persistent technical issues</li>
+    <li>Contact CloudFuze IT support team</li>
+</ul>
+
+<h3>Reporting Bugs</h3>
+
+<p>When reporting a bug or issue, include:</p>
+
+<table>
+    <tr>
+        <th>Information</th>
+        <th>Example</th>
+    </tr>
+    <tr>
+        <td>What were you trying to do?</td>
+        <td>"I was trying to update Contoso's dashboard"</td>
+    </tr>
+    <tr>
+        <td>What happened?</td>
+        <td>"Progress bar stuck at 45% for 10 minutes"</td>
+    </tr>
+    <tr>
+        <td>Error message (if any)</td>
+        <td>"Source dashboard not found" from Activity Log</td>
+    </tr>
+    <tr>
+        <td>Steps to reproduce</td>
+        <td>"1. Click update icon, 2. Click proceed, 3. Wait"</td>
+    </tr>
+    <tr>
+        <td>Screenshot (if helpful)</td>
+        <td>Attach screenshot of error or stuck state</td>
+    </tr>
+    <tr>
+        <td>Browser and version</td>
+        <td>"Chrome 120 on Windows 11"</td>
+    </tr>
+    <tr>
+        <td>When did it happen?</td>
+        <td>"February 10, 2024 at 2:30 PM"</td>
+    </tr>
+</table>
+
+<div class="page-break"></div>
+
+<h3>Feature Requests</h3>
+
+<p>To suggest improvements or new features:</p>
+<ol>
+    <li>Describe the feature clearly</li>
+    <li>Explain the business value (why is it needed?)</li>
+    <li>Provide use cases or examples</li>
+    <li>Estimate how often it would be used</li>
+    <li>Submit to administrator for evaluation</li>
+</ol>
+
+<h3>Training and Onboarding</h3>
+
+<p>For new CloudFuze migration managers:</p>
+<ul>
+    <li>Review this documentation thoroughly</li>
+    <li>Attend CloudFuze onboarding training sessions</li>
+    <li>Practice with test customer dashboards if available</li>
+    <li>Shadow experienced migration managers for first few operations</li>
+    <li>Ask questions - no question is too basic!</li>
+</ul>
+
+<hr style="margin: 40px 0; border: 2px solid #1F4E78;">
+
+<h2>Quick Reference Guide</h2>
+
+<table>
+    <tr>
+        <th>Task</th>
+        <th>How To</th>
+    </tr>
+    <tr>
+        <td>Create dashboards for new customers</td>
+        <td>Click "Run Now" button or wait for auto-run</td>
+    </tr>
+    <tr>
+        <td>View a dashboard</td>
+        <td>Click "Open" button on dashboard card</td>
+    </tr>
+    <tr>
+        <td>Update dashboard to latest template</td>
+        <td>Click update icon (🔄), then "Proceed"</td>
+    </tr>
+    <tr>
+        <td>Delete completed migration dashboard</td>
+        <td>Click delete icon (🗑️), confirm deletion</td>
+    </tr>
+    <tr>
+        <td>Rename dashboard</td>
+        <td>Click edit icon (✏️), enter new name, "Save"</td>
+    </tr>
+    <tr>
+        <td>View operation history</td>
+        <td>Click "Activity Log" button in navigation</td>
+    </tr>
+    <tr>
+        <td>Combine multiple dashboards</td>
+        <td>Click "Merge", select dashboards, name, merge</td>
+    </tr>
+    <tr>
+        <td>Troubleshoot issues</td>
+        <td>Check Activity Log for error messages first</td>
+    </tr>
+</table>
+
+<hr style="margin: 40px 0; border: 2px solid #1F4E78;">
+
+<p style="text-align: center; color: #7F7F7F; margin-top: 40px;">
+    <strong>Document Version 2.0</strong><br>
+    Last Updated: February 2024<br>
+    For Internal Use - CloudFuze Migration Team<br>
+    <br>
+    <em>This document is confidential and intended only for CloudFuze authorized personnel.</em>
+</p>
+
+</body>
+</html>
