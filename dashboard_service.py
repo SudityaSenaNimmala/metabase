@@ -554,13 +554,13 @@ mongo_storage = MongoDBStorage()
 @dataclass
 class ActivityLogEntry:
     timestamp: str
-    database_name: str
-    database_id: int
     db_type: str
     dashboard_name: str
-    dashboard_id: int
-    dashboard_url: str
     status: str  # "success", "failed", "deleted", "updated", "renamed", or "settings_updated"
+    database_name: Optional[str] = None
+    database_id: Optional[int] = None
+    dashboard_id: Optional[int] = None
+    dashboard_url: Optional[str] = None
     error_message: Optional[str] = None
     performed_by: Optional[str] = "auto-clone"  # "auto-clone", "manual-run", or user email
     details: Optional[str] = None  # Additional details about the action
@@ -2535,11 +2535,14 @@ def save_settings():
         if changes_made:
             activity_entry = ActivityLogEntry(
                 timestamp=datetime.now().isoformat() + 'Z',
-                status='settings_updated',
                 db_type='system',
                 dashboard_name='Settings Configuration',
+                status='settings_updated',
+                database_name=None,
+                database_id=None,
                 dashboard_id=None,
                 dashboard_url=None,
+                error_message=None,
                 performed_by=user_email,
                 details='; '.join(changes_made)
             )
