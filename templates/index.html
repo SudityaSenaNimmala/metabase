@@ -782,6 +782,10 @@
             transition: all 0.2s ease;
             position: relative;
             overflow: hidden;
+            min-height: 200px;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
         }
 
         .dashboard-card:hover {
@@ -827,10 +831,20 @@
 
         .dashboard-card-footer {
             display: flex;
+            flex-direction: column;
+            justify-content: flex-start;
+            align-items: stretch;
+            gap: 0.5rem;
+            margin-top: auto;
+        }
+
+        .dashboard-card-meta {
+            display: flex;
             justify-content: flex-start;
             align-items: center;
             gap: 0.5rem;
             flex-wrap: wrap;
+            margin-bottom: 0.5rem;
         }
 
         .dashboard-card-id {
@@ -866,19 +880,20 @@
         }
 
         .dashboard-open-btn {
-            margin-left: auto;
             display: inline-flex;
             align-items: center;
+            justify-content: center;
             gap: 0.4rem;
-            padding: 0.4rem 0.75rem;
+            padding: 0.5rem 1rem;
             background: var(--accent-blue);
             color: white;
             border: none;
             border-radius: 6px;
-            font-size: 0.75rem;
+            font-size: 0.8rem;
             font-weight: 600;
             cursor: pointer;
             transition: all 0.2s ease;
+            width: 100%;
         }
 
         .dashboard-open-btn:hover {
@@ -1212,9 +1227,11 @@
         /* Icon Action Buttons Container */
         .dashboard-icon-actions {
             display: flex;
-            gap: 8px;
+            gap: 6px;
             justify-content: center;
             margin-bottom: 8px;
+            width: 100%;
+            max-width: 100%;
         }
 
         /* Delete Button - Simple Icon */
@@ -1222,8 +1239,8 @@
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            width: 24px;
-            height: 24px;
+            width: 20px;
+            height: 20px;
             padding: 0;
             background: transparent;
             color: var(--text-muted);
@@ -1231,12 +1248,13 @@
             cursor: pointer;
             transition: all 0.2s ease;
             opacity: 0.7;
+            flex-shrink: 0;
         }
 
         .dashboard-delete-btn:hover {
             color: var(--accent-red);
             opacity: 1;
-            transform: scale(1.1);
+            transform: scale(1.15);
         }
 
         .dashboard-delete-btn:disabled {
@@ -1247,8 +1265,8 @@
 
         .dashboard-delete-btn svg {
             flex-shrink: 0;
-            width: 16px;
-            height: 16px;
+            width: 14px;
+            height: 14px;
         }
 
         /* Edit Button - Simple Icon */
@@ -1256,8 +1274,8 @@
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            width: 24px;
-            height: 24px;
+            width: 20px;
+            height: 20px;
             padding: 0;
             background: transparent;
             color: var(--text-muted);
@@ -1265,12 +1283,13 @@
             cursor: pointer;
             transition: all 0.2s ease;
             opacity: 0.7;
+            flex-shrink: 0;
         }
 
         .dashboard-edit-btn:hover {
             color: var(--accent-blue);
             opacity: 1;
-            transform: scale(1.1);
+            transform: scale(1.15);
         }
 
         .dashboard-edit-btn:disabled {
@@ -1281,8 +1300,8 @@
 
         .dashboard-edit-btn svg {
             flex-shrink: 0;
-            width: 16px;
-            height: 16px;
+            width: 14px;
+            height: 14px;
         }
 
         /* Update Button - Simple Icon */
@@ -1290,8 +1309,8 @@
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            width: 24px;
-            height: 24px;
+            width: 20px;
+            height: 20px;
             padding: 0;
             background: transparent;
             color: var(--text-muted);
@@ -1299,12 +1318,13 @@
             cursor: pointer;
             transition: all 0.2s ease;
             opacity: 0.7;
+            flex-shrink: 0;
         }
 
         .dashboard-update-btn:hover {
             color: var(--accent-orange);
             opacity: 1;
-            transform: scale(1.1);
+            transform: scale(1.15);
         }
 
         .dashboard-update-btn:disabled {
@@ -1315,8 +1335,8 @@
 
         .dashboard-update-btn svg {
             flex-shrink: 0;
-            width: 16px;
-            height: 16px;
+            width: 14px;
+            height: 14px;
         }
 
         .dashboard-card.selected {
@@ -3005,8 +3025,10 @@
                                 <div class="dashboard-card-name">${escapeHtml(d.name || 'Unnamed Dashboard')}</div>
                                 <div class="dashboard-card-desc">${escapeHtml(d.description || 'No description')}</div>
                                 <div class="dashboard-card-footer">
-                                    <span class="dashboard-card-id">ID: ${d.id}</span>
-                                    <span class="dashboard-card-type ${d.type}">${d.type}</span>
+                                    <div class="dashboard-card-meta">
+                                        <span class="dashboard-card-id">ID: ${d.id}</span>
+                                        <span class="dashboard-card-type ${d.type}">${d.type}</span>
+                                    </div>
                                     <div class="dashboard-icon-actions">
                                         <button class="dashboard-edit-btn" onclick="editDashboard(${d.id}, '${d.type}', '${escapeHtml(d.name || 'Unnamed')}')" title="Edit name">
                                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
