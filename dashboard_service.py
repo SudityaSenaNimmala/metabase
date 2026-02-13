@@ -29,7 +29,7 @@ if sys.platform == 'win32':
     except:
         pass
 
-from flask import Flask, render_template, jsonify, request
+from flask import Flask, render_template, jsonify, request, session
 from flask_cors import CORS
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -938,7 +938,11 @@ class DashboardService:
                 # Log result
                 if new_dashboard:
                     # Determine who performed this action
-                    performed_by = "auto-clone" if not self.is_manual_run else session.get('user', {}).get('email', 'manual-run')
+                    if self.is_manual_run:
+                        current_user = get_current_user()
+                        performed_by = current_user.get('email') if current_user else 'manual-run'
+                    else:
+                        performed_by = "auto-clone"
                     
                     entry = ActivityLogEntry(
                         timestamp=datetime.utcnow().isoformat() + 'Z',
@@ -954,7 +958,11 @@ class DashboardService:
                     self.activity_log.add_entry(entry)
                     logging.info(f"SUCCESS: Created {dashboard_name} (ID: {new_dashboard['id']})")
                 else:
-                    performed_by = "auto-clone" if not self.is_manual_run else session.get('user', {}).get('email', 'manual-run')
+                    if self.is_manual_run:
+                        current_user = get_current_user()
+                        performed_by = current_user.get('email') if current_user else 'manual-run'
+                    else:
+                        performed_by = "auto-clone"
                     
                     entry = ActivityLogEntry(
                         timestamp=datetime.utcnow().isoformat() + 'Z',
@@ -1917,6 +1925,9 @@ def _execute_dashboard_update(task_id, dashboard_id, dashboard_type, dashboard_n
             pass
         
         # Log the activity
+        current_user = get_current_user()
+        performed_by = current_user.get('email') if current_user else 'manual-update'
+        
         entry = ActivityLogEntry(
             timestamp=datetime.utcnow().isoformat() + 'Z',
             database_name=db_name,
@@ -1927,7 +1938,7 @@ def _execute_dashboard_update(task_id, dashboard_id, dashboard_type, dashboard_n
             dashboard_url=new_url,
             status="updated",
             error_message=None,
-            performed_by=session.get('user', {}).get('email', 'manual-update')
+            performed_by=performed_by
         )
         service.activity_log.add_entry(entry)
         
@@ -1999,7 +2010,8 @@ def delete_dashboard_endpoint(dashboard_id):
         dashboard_name = data.get('dashboard_name', f'Dashboard {dashboard_id}')
         
         # Get current user
-        user_email = session.get('user', {}).get('email', 'unknown')
+        current_user = get_current_user()
+        user_email = current_user.get('email') if current_user else 'unknown'
         
         if not service.metabase_config:
             return jsonify({"success": False, "error": "Metabase not configured"}), 400
@@ -2120,6 +2132,96 @@ def delete_dashboard_endpoint(dashboard_id):
         
     except Exception as e:
         logging.error(f"Failed to delete dashboard: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route('/api/dashboard/rename/<int:dashboard_id>', methods=['POST'])
+@require_auth
+def rename_dashboard_endpoint(dashboard_id):
+    """Rename a dashboard in Metabase"""
+    import requests
+    
+    try:
+        data = request.json or {}
+        new_name = data.get('new_name', '').strip()
+        dashboard_type = data.get('dashboard_type')
+        
+        if not new_name:
+            return jsonify({"success": False, "error": "New name is required"}), 400
+
+        # Get current user for logging
+        current_user = get_current_user()
+        user_email = current_user.get('email') if current_user else 'unknown'
+
+        if not service.metabase_config:
+            return jsonify({"success": False, "error": "Metabase not configured"}), 400
+
+        base_url = service.metabase_config['base_url'].rstrip('/')
+
+        # Authenticate with Metabase
+        auth_response = requests.post(
+            f"{base_url}/api/session",
+            json={
+                "username": service.metabase_config['username'],
+                "password": service.metabase_config['password']
+            },
+            timeout=10
+        )
+        if auth_response.status_code != 200:
+            return jsonify({"success": False, "error": "Failed to authenticate"}), 500
+
+        headers = {"X-Metabase-Session": auth_response.json()["id"]}
+
+        # Get current dashboard details
+        dash_response = requests.get(f"{base_url}/api/dashboard/{dashboard_id}", headers=headers, timeout=10)
+        if dash_response.status_code != 200:
+            return jsonify({"success": False, "error": "Dashboard not found"}), 404
+
+        dashboard = dash_response.json()
+        old_name = dashboard.get('name', 'Unknown')
+        
+        # Update dashboard name
+        update_response = requests.put(
+            f"{base_url}/api/dashboard/{dashboard_id}",
+            headers=headers,
+            json={"name": new_name},
+            timeout=10
+        )
+        
+        if update_response.status_code != 200:
+            return jsonify({"success": False, "error": f"Failed to update dashboard: {update_response.status_code}"}), 500
+
+        # Log the rename action
+        collection_name = "Unknown"
+        if dashboard.get('collection_id'):
+            coll_response = requests.get(
+                f"{base_url}/api/collection/{dashboard['collection_id']}", 
+                headers=headers, 
+                timeout=10
+            )
+            if coll_response.status_code == 200:
+                collection_name = coll_response.json().get('name', 'Unknown')
+        
+        entry = ActivityLogEntry(
+            timestamp=datetime.utcnow().isoformat() + 'Z',
+            database_name=collection_name,
+            database_id=0,
+            db_type=dashboard_type or 'unknown',
+            dashboard_name=f"{old_name} → {new_name}",
+            dashboard_id=dashboard_id,
+            dashboard_url=f"{base_url}/dashboard/{dashboard_id}",
+            status="renamed",
+            error_message=None,
+            performed_by=user_email
+        )
+        service.activity_log.add_entry(entry)
+
+        return jsonify({"success": True, "message": "Dashboard renamed successfully", "new_name": new_name})
+
+    except Exception as e:
+        logging.error(f"Failed to rename dashboard: {e}")
         import traceback
         traceback.print_exc()
         return jsonify({"success": False, "error": str(e)}), 500
