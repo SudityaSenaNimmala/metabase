@@ -563,8 +563,9 @@ class ActivityLogEntry:
     dashboard_name: str
     dashboard_id: int
     dashboard_url: str
-    status: str  # "success", "failed", or "deleted"
+    status: str  # "success", "failed", "deleted", or "updated"
     error_message: Optional[str] = None
+    performed_by: Optional[str] = "auto-clone"  # "auto-clone", "manual-run", or user email
 
 
 class ActivityLog:
@@ -607,6 +608,7 @@ class DashboardService:
         self.next_run: Optional[datetime] = None
         self.is_running = False
         self.stop_requested = False  # Flag to stop the current run
+        self.is_manual_run = False  # Flag to track if run was triggered manually
         self.current_status = "Idle"
         self.metabase_config = None
         self.auto_config = None
@@ -818,7 +820,8 @@ class DashboardService:
                             dashboard_id=dash_id,
                             dashboard_url="",
                             status="deleted",
-                            error_message="Empty dashboard - database decomposed"
+                            error_message="Empty dashboard - database decomposed",
+                            performed_by="auto-clone"
                         )
                         self.activity_log.add_entry(entry)
                         logging.info(f"  ✓ Deleted: {dash_name}")
@@ -934,6 +937,9 @@ class DashboardService:
                 
                 # Log result
                 if new_dashboard:
+                    # Determine who performed this action
+                    performed_by = "auto-clone" if not self.is_manual_run else session.get('user', {}).get('email', 'manual-run')
+                    
                     entry = ActivityLogEntry(
                         timestamp=datetime.utcnow().isoformat() + 'Z',
                         database_name=db.name,
@@ -942,11 +948,14 @@ class DashboardService:
                         dashboard_name=dashboard_name,
                         dashboard_id=new_dashboard['id'],
                         dashboard_url=f"{self.base_url}/dashboard/{new_dashboard['id']}",
-                        status="success"
+                        status="success",
+                        performed_by=performed_by
                     )
                     self.activity_log.add_entry(entry)
                     logging.info(f"SUCCESS: Created {dashboard_name} (ID: {new_dashboard['id']})")
                 else:
+                    performed_by = "auto-clone" if not self.is_manual_run else session.get('user', {}).get('email', 'manual-run')
+                    
                     entry = ActivityLogEntry(
                         timestamp=datetime.utcnow().isoformat() + 'Z',
                         database_name=db.name,
@@ -956,7 +965,8 @@ class DashboardService:
                         dashboard_id=0,
                         dashboard_url="",
                         status="failed",
-                        error_message=f"Failed after {MAX_RETRIES} attempts: {last_error}"
+                        error_message=f"Failed after {MAX_RETRIES} attempts: {last_error}",
+                        performed_by=performed_by
                     )
                     self.activity_log.add_entry(entry)
                     logging.error(f"FAILED: Could not create dashboard for {db.name} after {MAX_RETRIES} attempts")
@@ -974,6 +984,7 @@ class DashboardService:
         
         finally:
             self.is_running = False
+            self.is_manual_run = False  # Reset manual run flag
     
     def _find_databases_with_dashboards_in_collections(self, headers: dict, collection_ids: List[int]) -> Set[int]:
         """
@@ -1451,6 +1462,669 @@ def get_dashboards_list(db_type):
         return jsonify({"error": str(e), "dashboards": []})
 
 
+# Store for update task progress
+update_tasks = {}
+
+@app.route('/api/dashboard/update', methods=['POST'])
+@require_auth
+def update_dashboard():
+    """
+    Update a dashboard by cloning from source first, then deleting old one only on success.
+    This is safer - if cloning fails, the old dashboard remains intact.
+    """
+    import threading
+    import uuid
+    
+    try:
+        data = request.json
+        dashboard_id = data.get('dashboard_id')
+        dashboard_type = data.get('dashboard_type')
+        dashboard_name = data.get('dashboard_name')
+        
+        if not dashboard_id or not dashboard_type:
+            return jsonify({"success": False, "error": "Missing dashboard_id or dashboard_type"}), 400
+        
+        if dashboard_type not in ['content', 'message', 'email']:
+            return jsonify({"success": False, "error": "Invalid dashboard type"}), 400
+        
+        # Get config
+        if not service.metabase_config:
+            return jsonify({"success": False, "error": "Metabase not configured"}), 400
+        
+        auto_config = mongo_storage.get_auto_clone_config()
+        source_dashboards = auto_config.get('source_dashboards', {})
+        dashboards_collections = auto_config.get('dashboards_collections', {})
+        
+        source_dashboard_id = source_dashboards.get(dashboard_type)
+        dashboards_collection_id = dashboards_collections.get(dashboard_type)
+        
+        if not source_dashboard_id:
+            return jsonify({"success": False, "error": f"No source dashboard configured for {dashboard_type}"}), 400
+        
+        if not dashboards_collection_id:
+            return jsonify({"success": False, "error": f"No dashboards collection configured for {dashboard_type}"}), 400
+        
+        # Create task ID for progress tracking
+        task_id = str(uuid.uuid4())
+        update_tasks[task_id] = {
+            'progress': 0,
+            'status': 'Starting update...',
+            'completed': False,
+            'success': False,
+            'cancelled': False,
+            'cancel_requested': False,
+            'error': None,
+            'new_dashboard_id': None,
+            'new_url': None,
+            'old_dashboard_id': dashboard_id,
+            # Track newly created items for cleanup on cancel
+            'created_items': {
+                'dashboards': [],
+                'cards': [],
+                'collection_id': None
+            }
+        }
+        
+        # Run update in background thread
+        def run_update():
+            try:
+                _execute_dashboard_update(
+                    task_id, dashboard_id, dashboard_type, dashboard_name,
+                    source_dashboard_id, dashboards_collection_id
+                )
+            except Exception as e:
+                logging.error(f"Update task {task_id} failed: {e}")
+                import traceback
+                traceback.print_exc()
+                update_tasks[task_id]['completed'] = True
+                update_tasks[task_id]['success'] = False
+                update_tasks[task_id]['error'] = str(e)
+        
+        thread = threading.Thread(target=run_update)
+        thread.start()
+        
+        return jsonify({"success": True, "task_id": task_id})
+        
+    except Exception as e:
+        logging.error(f"Failed to start dashboard update: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route('/api/dashboard/update/cancel/<task_id>', methods=['POST'])
+@require_auth
+def cancel_dashboard_update(task_id):
+    """Cancel a running dashboard update and clean up any created items"""
+    task = update_tasks.get(task_id)
+    if not task:
+        return jsonify({"error": "Task not found"}), 404
+    
+    if task['completed']:
+        return jsonify({"error": "Task already completed", "success": task['success']}), 400
+    
+    # Set cancel flag
+    task['cancel_requested'] = True
+    task['status'] = 'Cancelling...'
+    
+    logging.info(f"Cancel requested for update task {task_id}")
+    
+    return jsonify({"success": True, "message": "Cancel requested"})
+
+
+def _cleanup_created_items(task, headers, base_url):
+    """Clean up any items created during a cancelled or failed update"""
+    created = task.get('created_items', {})
+    
+    # Delete created dashboards
+    for dash_id in created.get('dashboards', []):
+        try:
+            logging.info(f"Cleaning up: deleting dashboard {dash_id}")
+            requests.delete(f"{base_url}/api/dashboard/{dash_id}", headers=headers, timeout=10)
+        except Exception as e:
+            logging.warning(f"Failed to delete dashboard {dash_id}: {e}")
+    
+    # Delete created cards/questions
+    for card_id in created.get('cards', []):
+        try:
+            logging.info(f"Cleaning up: deleting card {card_id}")
+            requests.delete(f"{base_url}/api/card/{card_id}", headers=headers, timeout=10)
+        except Exception as e:
+            logging.warning(f"Failed to delete card {card_id}: {e}")
+
+
+def _execute_dashboard_update(task_id, dashboard_id, dashboard_type, dashboard_name,
+                               source_dashboard_id, dashboards_collection_id):
+    """Execute the dashboard update process - clone first, delete old only on success"""
+    import requests
+    
+    task = update_tasks[task_id]
+    headers = None
+    base_url = None
+    
+    def check_cancelled():
+        """Check if cancel was requested and handle cleanup"""
+        if task.get('cancel_requested'):
+            task['status'] = 'Cleaning up cancelled update...'
+            if headers and base_url:
+                _cleanup_created_items(task, headers, base_url)
+            task['cancelled'] = True
+            task['completed'] = True
+            task['success'] = False
+            task['status'] = 'Update cancelled'
+            task['error'] = 'Cancelled by user'
+            logging.info(f"Update task {task_id} cancelled by user")
+            return True
+        return False
+    
+    try:
+        base_url = service.metabase_config['base_url'].rstrip('/')
+        
+        # Step 1: Authenticate
+        task['progress'] = 5
+        task['status'] = 'Authenticating...'
+        
+        if check_cancelled():
+            return
+        
+        auth_response = requests.post(
+            f"{base_url}/api/session",
+            json={
+                "username": service.metabase_config['username'],
+                "password": service.metabase_config['password']
+            },
+            timeout=10
+        )
+        if auth_response.status_code != 200:
+            raise Exception("Failed to authenticate with Metabase")
+        
+        headers = {"X-Metabase-Session": auth_response.json()["id"]}
+        
+        # Step 2: Get the OLD dashboard info (we need this to find the database)
+        task['progress'] = 10
+        task['status'] = 'Getting dashboard info...'
+        
+        if check_cancelled():
+            return
+        
+        dash_response = requests.get(
+            f"{base_url}/api/dashboard/{dashboard_id}",
+            headers=headers,
+            timeout=30
+        )
+        if dash_response.status_code != 200:
+            raise Exception(f"Dashboard {dashboard_id} not found")
+        
+        old_dashboard_data = dash_response.json()
+        old_collection_id = old_dashboard_data.get('collection_id')
+        
+        # Extract customer name from dashboard name (e.g., "Customer ABC Dashboard" -> "Customer ABC")
+        customer_name = dashboard_name
+        if dashboard_name.endswith(' Dashboard'):
+            customer_name = dashboard_name[:-10]  # Remove " Dashboard"
+        
+        # Step 3: Find the target database from the OLD dashboard's cards
+        task['progress'] = 15
+        task['status'] = 'Finding target database...'
+        
+        if check_cancelled():
+            return
+        
+        # Get database ID from old dashboard's cards
+        target_database_id = None
+        old_dashcards = old_dashboard_data.get('dashcards', []) or old_dashboard_data.get('ordered_cards', [])
+        for dc in old_dashcards:
+            card = dc.get('card', {})
+            if card and card.get('database_id'):
+                target_database_id = card.get('database_id')
+                break
+        
+        # If not found in cards, search by customer name
+        if not target_database_id:
+            from db_identifier import DatabaseIdentifier
+            identifier = DatabaseIdentifier(service.metabase_config)
+            if identifier.authenticate():
+                grouped = identifier.get_databases_by_type()
+                for db in grouped.get(dashboard_type, []):
+                    db_customer = service.extract_customer_name(db.name)
+                    if db_customer and db_customer.lower() == customer_name.lower():
+                        target_database_id = db.id
+                        logging.info(f"Found target database by name: {db.name} (ID: {db.id})")
+                        break
+                    if customer_name.lower() in db.name.lower():
+                        target_database_id = db.id
+                        logging.info(f"Found target database (fuzzy): {db.name} (ID: {db.id})")
+                        break
+        
+        if not target_database_id:
+            raise Exception(f"Could not find database for customer: {customer_name}")
+        
+        logging.info(f"Target database ID: {target_database_id}")
+        
+        # Step 4: Find the OLD customer collection (where questions are stored)
+        task['progress'] = 20
+        task['status'] = 'Finding customer collection...'
+        
+        if check_cancelled():
+            return
+        
+        old_questions_collection_id = None
+        collection_name = f"{customer_name} Collection"
+        collections_response = requests.get(
+            f"{base_url}/api/collection",
+            headers=headers,
+            timeout=30
+        )
+        if collections_response.status_code == 200:
+            all_collections = collections_response.json()
+            for col in all_collections:
+                if col.get('name', '').lower() == collection_name.lower():
+                    old_questions_collection_id = col.get('id')
+                    logging.info(f"Found old customer collection: {collection_name} (ID: {old_questions_collection_id})")
+                    break
+        
+        # Step 5: Clone the NEW dashboard (this is the safe part - old dashboard still exists)
+        task['progress'] = 30
+        task['status'] = 'Cloning new dashboard...'
+        
+        if check_cancelled():
+            return
+        
+        cloner = DashboardCloner(
+            service.metabase_config,
+            stop_check_callback=lambda: task.get('cancel_requested', False)
+        )
+        if not cloner.authenticate():
+            raise Exception("Failed to authenticate cloner")
+        
+        # Get source dashboard's parent collection for the customer collection
+        source_parent = cloner.get_dashboard_collection_id(source_dashboard_id)
+        
+        # Create a NEW customer collection with a temporary suffix to avoid conflicts
+        temp_collection_name = f"{customer_name} Collection (updating)"
+        new_customer_col = cloner.create_collection(temp_collection_name, source_parent)
+        new_questions_collection_id = new_customer_col['id'] if new_customer_col else None
+        
+        if new_questions_collection_id:
+            task['created_items']['collection_id'] = new_questions_collection_id
+        
+        task['progress'] = 40
+        task['status'] = 'Analyzing linked dashboards...'
+        
+        if check_cancelled():
+            return
+        
+        # Check for linked dashboards
+        all_linked = cloner.find_all_linked_dashboards(source_dashboard_id)
+        
+        new_dashboard = None
+        new_dashboard_name = f"{customer_name} Dashboard"
+        
+        task['progress'] = 50
+        task['status'] = 'Creating new dashboard...'
+        
+        if check_cancelled():
+            return
+        
+        try:
+            if all_linked:
+                task['status'] = f'Cloning dashboard with {len(all_linked)} linked dashboards...'
+                new_dashboard = cloner.clone_with_all_linked(
+                    source_dashboard_id=source_dashboard_id,
+                    new_name=new_dashboard_name,
+                    new_database_id=target_database_id,
+                    dashboard_collection_id=new_questions_collection_id,
+                    questions_collection_id=new_questions_collection_id,
+                    main_dashboard_collection_id=dashboards_collection_id
+                )
+            else:
+                new_dashboard = cloner.clone_dashboard(
+                    source_dashboard_id=source_dashboard_id,
+                    new_name=new_dashboard_name,
+                    new_database_id=target_database_id,
+                    dashboard_collection_id=dashboards_collection_id,
+                    questions_collection_id=new_questions_collection_id
+                )
+        except StopRequested:
+            # Clone was cancelled
+            task['status'] = 'Cleaning up cancelled update...'
+            _cleanup_created_items(task, headers, base_url)
+            # Also delete the temp collection
+            if new_questions_collection_id:
+                try:
+                    requests.delete(f"{base_url}/api/collection/{new_questions_collection_id}", headers=headers, timeout=10)
+                except:
+                    pass
+            task['cancelled'] = True
+            task['completed'] = True
+            task['success'] = False
+            task['status'] = 'Update cancelled'
+            task['error'] = 'Cancelled by user'
+            return
+        
+        if check_cancelled():
+            return
+        
+        if not new_dashboard:
+            raise Exception("Failed to clone dashboard")
+        
+        new_dashboard_id = new_dashboard.get('id')
+        task['created_items']['dashboards'].append(new_dashboard_id)
+        
+        # Track all created questions from the cloner
+        for old_id, new_id in cloner.question_mapping.items():
+            task['created_items']['cards'].append(new_id)
+        
+        # Track all created linked dashboards
+        for old_id, new_id in cloner.dashboard_mapping.items():
+            if new_id != new_dashboard_id:
+                task['created_items']['dashboards'].append(new_id)
+        
+        task['progress'] = 70
+        task['status'] = 'New dashboard created successfully!'
+        
+        if check_cancelled():
+            return
+        
+        # ============================================================
+        # SUCCESS! Now safe to delete the OLD dashboard and questions
+        # ============================================================
+        
+        task['progress'] = 75
+        task['status'] = 'Cleaning up old dashboard...'
+        
+        # Delete old dashboard
+        try:
+            delete_response = requests.delete(
+                f"{base_url}/api/dashboard/{dashboard_id}",
+                headers=headers,
+                timeout=30
+            )
+            if delete_response.status_code in [200, 204]:
+                logging.info(f"Deleted old dashboard {dashboard_id}")
+            else:
+                logging.warning(f"Failed to delete old dashboard {dashboard_id}: {delete_response.status_code}")
+        except Exception as e:
+            logging.warning(f"Error deleting old dashboard: {e}")
+        
+        task['progress'] = 80
+        task['status'] = 'Cleaning up old questions...'
+        
+        # Delete old questions in the old customer collection
+        if old_questions_collection_id:
+            try:
+                items_response = requests.get(
+                    f"{base_url}/api/collection/{old_questions_collection_id}/items",
+                    headers=headers,
+                    timeout=30
+                )
+                if items_response.status_code == 200:
+                    items = items_response.json()
+                    items_data = items if isinstance(items, list) else items.get('data', [])
+                    
+                    for item in items_data:
+                        if item.get('model') == 'card':
+                            card_id = item.get('id')
+                            try:
+                                requests.delete(f"{base_url}/api/card/{card_id}", headers=headers, timeout=10)
+                            except:
+                                pass
+                        elif item.get('model') == 'dashboard':
+                            linked_dash_id = item.get('id')
+                            try:
+                                requests.delete(f"{base_url}/api/dashboard/{linked_dash_id}", headers=headers, timeout=10)
+                            except:
+                                pass
+                
+                # Delete the old collection itself
+                try:
+                    requests.delete(f"{base_url}/api/collection/{old_questions_collection_id}", headers=headers, timeout=10)
+                    logging.info(f"Deleted old collection {old_questions_collection_id}")
+                except:
+                    pass
+                    
+            except Exception as e:
+                logging.warning(f"Error cleaning up old customer collection: {e}")
+        
+        task['progress'] = 85
+        task['status'] = 'Renaming new collection...'
+        
+        # Rename the temp collection to the proper name
+        if new_questions_collection_id:
+            try:
+                requests.put(
+                    f"{base_url}/api/collection/{new_questions_collection_id}",
+                    headers=headers,
+                    json={"name": collection_name},
+                    timeout=10
+                )
+                logging.info(f"Renamed collection to: {collection_name}")
+            except Exception as e:
+                logging.warning(f"Failed to rename collection: {e}")
+        
+        task['progress'] = 90
+        task['status'] = 'Finalizing...'
+        
+        new_url = f"{base_url}/dashboard/{new_dashboard_id}"
+        
+        # Get database info for logging
+        db_name = customer_name
+        try:
+            db_response = requests.get(f"{base_url}/api/database/{target_database_id}", headers=headers, timeout=10)
+            if db_response.status_code == 200:
+                db_name = db_response.json().get('name', customer_name)
+        except:
+            pass
+        
+        # Log the activity
+        entry = ActivityLogEntry(
+            timestamp=datetime.utcnow().isoformat() + 'Z',
+            database_name=db_name,
+            database_id=target_database_id,
+            db_type=dashboard_type,
+            dashboard_name=new_dashboard_name,
+            dashboard_id=new_dashboard_id,
+            dashboard_url=new_url,
+            status="updated",
+            error_message=None,
+            performed_by=session.get('user', {}).get('email', 'manual-update')
+        )
+        service.activity_log.add_entry(entry)
+        
+        # Clear created items since update was successful
+        task['created_items'] = {'dashboards': [], 'cards': [], 'collection_id': None}
+        
+        task['progress'] = 100
+        task['status'] = 'Update complete!'
+        task['completed'] = True
+        task['success'] = True
+        task['new_dashboard_id'] = new_dashboard_id
+        task['new_url'] = new_url
+        
+        logging.info(f"Dashboard update complete: {dashboard_name} -> ID {new_dashboard_id}")
+        
+    except Exception as e:
+        logging.error(f"Dashboard update failed: {e}")
+        import traceback
+        traceback.print_exc()
+        
+        # Clean up any created items on failure
+        if headers and base_url:
+            task['status'] = 'Cleaning up after error...'
+            _cleanup_created_items(task, headers, base_url)
+            # Also delete the temp collection if created
+            temp_col_id = task.get('created_items', {}).get('collection_id')
+            if temp_col_id:
+                try:
+                    requests.delete(f"{base_url}/api/collection/{temp_col_id}", headers=headers, timeout=10)
+                except:
+                    pass
+        
+        task['completed'] = True
+        task['success'] = False
+        task['error'] = str(e)
+        task['status'] = f'Error: {str(e)}'
+
+
+@app.route('/api/dashboard/update/status/<task_id>')
+@require_auth
+def get_update_status(task_id):
+    """Get the status of a dashboard update task"""
+    task = update_tasks.get(task_id)
+    if not task:
+        return jsonify({"error": "Task not found"}), 404
+    
+    return jsonify({
+        "progress": task['progress'],
+        "status": task['status'],
+        "completed": task['completed'],
+        "success": task['success'],
+        "cancelled": task.get('cancelled', False),
+        "error": task['error'],
+        "new_dashboard_id": task.get('new_dashboard_id'),
+        "new_url": task.get('new_url'),
+        "old_dashboard_id": task.get('old_dashboard_id')
+    })
+
+
+@app.route('/api/dashboard/delete/<int:dashboard_id>', methods=['POST'])
+@require_auth
+def delete_dashboard_endpoint(dashboard_id):
+    """Delete a dashboard and its associated questions/collection"""
+    import requests
+    
+    try:
+        data = request.json or {}
+        dashboard_type = data.get('dashboard_type')
+        dashboard_name = data.get('dashboard_name', f'Dashboard {dashboard_id}')
+        
+        # Get current user
+        user_email = session.get('user', {}).get('email', 'unknown')
+        
+        if not service.metabase_config:
+            return jsonify({"success": False, "error": "Metabase not configured"}), 400
+        
+        base_url = service.metabase_config['base_url'].rstrip('/')
+        
+        # Authenticate
+        auth_response = requests.post(
+            f"{base_url}/api/session",
+            json={
+                "username": service.metabase_config['username'],
+                "password": service.metabase_config['password']
+            },
+            timeout=10
+        )
+        if auth_response.status_code != 200:
+            return jsonify({"success": False, "error": "Failed to authenticate"}), 500
+        
+        headers = {"X-Metabase-Session": auth_response.json()["id"]}
+        
+        # Get dashboard info before deleting
+        dash_response = requests.get(
+            f"{base_url}/api/dashboard/{dashboard_id}",
+            headers=headers,
+            timeout=30
+        )
+        
+        if dash_response.status_code != 200:
+            return jsonify({"success": False, "error": f"Dashboard {dashboard_id} not found"}), 404
+        
+        dashboard_data = dash_response.json()
+        collection_id = dashboard_data.get('collection_id')
+        
+        # Extract customer name from dashboard name
+        customer_name = dashboard_name
+        if dashboard_name.endswith(' Dashboard'):
+            customer_name = dashboard_name[:-10]
+        
+        # Find customer collection
+        customer_collection_id = None
+        collection_name = f"{customer_name} Collection"
+        collections_response = requests.get(
+            f"{base_url}/api/collection",
+            headers=headers,
+            timeout=30
+        )
+        if collections_response.status_code == 200:
+            all_collections = collections_response.json()
+            for col in all_collections:
+                if col.get('name', '').lower() == collection_name.lower():
+                    customer_collection_id = col.get('id')
+                    logging.info(f"Found customer collection: {collection_name} (ID: {customer_collection_id})")
+                    break
+        
+        # Delete dashboard
+        delete_response = requests.delete(
+            f"{base_url}/api/dashboard/{dashboard_id}",
+            headers=headers,
+            timeout=30
+        )
+        if delete_response.status_code not in [200, 204]:
+            return jsonify({"success": False, "error": f"Failed to delete dashboard: {delete_response.status_code}"}), 500
+        
+        logging.info(f"Deleted dashboard {dashboard_id}: {dashboard_name}")
+        
+        # Delete questions in customer collection
+        if customer_collection_id:
+            try:
+                items_response = requests.get(
+                    f"{base_url}/api/collection/{customer_collection_id}/items",
+                    headers=headers,
+                    timeout=30
+                )
+                if items_response.status_code == 200:
+                    items = items_response.json()
+                    items_data = items if isinstance(items, list) else items.get('data', [])
+                    
+                    for item in items_data:
+                        if item.get('model') == 'card':
+                            card_id = item.get('id')
+                            try:
+                                requests.delete(f"{base_url}/api/card/{card_id}", headers=headers, timeout=10)
+                            except:
+                                pass
+                        elif item.get('model') == 'dashboard':
+                            linked_dash_id = item.get('id')
+                            try:
+                                requests.delete(f"{base_url}/api/dashboard/{linked_dash_id}", headers=headers, timeout=10)
+                            except:
+                                pass
+                
+                # Delete the collection itself
+                try:
+                    requests.delete(f"{base_url}/api/collection/{customer_collection_id}", headers=headers, timeout=10)
+                    logging.info(f"Deleted customer collection {customer_collection_id}")
+                except:
+                    pass
+                    
+            except Exception as e:
+                logging.warning(f"Error cleaning up customer collection: {e}")
+        
+        # Log the deletion
+        entry = ActivityLogEntry(
+            timestamp=datetime.utcnow().isoformat() + 'Z',
+            database_name=customer_name,
+            database_id=0,  # We don't have the database ID anymore
+            db_type=dashboard_type or 'unknown',
+            dashboard_name=dashboard_name,
+            dashboard_id=dashboard_id,
+            dashboard_url="",
+            status="deleted",
+            error_message=None,
+            performed_by=user_email
+        )
+        service.activity_log.add_entry(entry)
+        
+        return jsonify({"success": True, "message": "Dashboard deleted successfully"})
+        
+    except Exception as e:
+        logging.error(f"Failed to delete dashboard: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
 @app.route('/api/dashboard-counts')
 def get_dashboard_counts():
     """Get dashboard counts from _DASHBOARDS collections using IDs from MongoDB config"""
@@ -1526,10 +2200,14 @@ def get_config():
 
 
 @app.route('/api/run', methods=['POST'])
+@require_auth
 def trigger_run():
     """Manually trigger a check"""
     if service.is_running:
         return jsonify({"error": "Check already running"}), 400
+    
+    # Set manual run flag
+    service.is_manual_run = True
     
     # Run in background thread
     thread = threading.Thread(target=service.run_check)
