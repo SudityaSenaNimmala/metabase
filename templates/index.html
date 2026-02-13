@@ -603,6 +603,11 @@
             border-color: var(--accent-cyan);
         }
 
+        .filter-btn.type-system.active {
+            background: #64748b;
+            border-color: #64748b;
+        }
+
         /* Status-specific active colors */
         .filter-btn.status-success.active {
             background: var(--accent-green);
@@ -617,6 +622,21 @@
         .filter-btn.status-deleted.active {
             background: #f59e0b;
             border-color: #f59e0b;
+        }
+
+        .filter-btn.status-updated.active {
+            background: #3b82f6;
+            border-color: #3b82f6;
+        }
+
+        .filter-btn.status-renamed.active {
+            background: #8b5cf6;
+            border-color: #8b5cf6;
+        }
+
+        .filter-btn.status-settings.active {
+            background: #06b6d4;
+            border-color: #06b6d4;
         }
 
         .date-picker-container {
@@ -2497,6 +2517,7 @@
                         <button class="filter-btn type-content" data-filter="type" data-value="content" onclick="toggleTypeFilter('content')">Content</button>
                         <button class="filter-btn type-message" data-filter="type" data-value="message" onclick="toggleTypeFilter('message')">Message</button>
                         <button class="filter-btn type-email" data-filter="type" data-value="email" onclick="toggleTypeFilter('email')">Email</button>
+                        <button class="filter-btn type-system" data-filter="type" data-value="system" onclick="toggleTypeFilter('system')">System</button>
                     </div>
                     <span class="filter-divider">|</span>
                     <div class="filter-buttons">
@@ -2504,6 +2525,9 @@
                         <button class="filter-btn status-success" data-filter="status" data-value="success" onclick="toggleStatusFilter('success')">Success</button>
                         <button class="filter-btn status-failed" data-filter="status" data-value="failed" onclick="toggleStatusFilter('failed')">Failed</button>
                         <button class="filter-btn status-deleted" data-filter="status" data-value="deleted" onclick="toggleStatusFilter('deleted')">Deleted</button>
+                        <button class="filter-btn status-updated" data-filter="status" data-value="updated" onclick="toggleStatusFilter('updated')">Updated</button>
+                        <button class="filter-btn status-renamed" data-filter="status" data-value="renamed" onclick="toggleStatusFilter('renamed')">Renamed</button>
+                        <button class="filter-btn status-settings" data-filter="status" data-value="settings_updated" onclick="toggleStatusFilter('settings_updated')">Settings</button>
                     </div>
                     <span class="filter-divider">|</span>
                 <div class="date-picker-container">
@@ -5056,7 +5080,11 @@
                     <span class="log-type ${entry.db_type}">${entry.db_type}</span>
                     <div class="log-info">
                         <div class="log-dashboard">${entry.dashboard_name}</div>
-                        <div class="log-database">${entry.status === 'deleted' ? 'Database decomposed' : `Database: ${entry.database_name} (ID: ${entry.database_id})`}</div>
+                        <div class="log-database">
+                            ${entry.status === 'deleted' ? 'Database decomposed' : 
+                              (entry.status === 'settings_updated' && entry.details ? entry.details : 
+                              `Database: ${entry.database_name} (ID: ${entry.database_id})`)}
+                        </div>
                         ${entry.performed_by ? `<div class="log-performer" style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">
                             By: ${entry.performed_by === 'auto-clone' ? '🤖 Auto-Clone' : (entry.performed_by === 'manual-run' ? '👤 Manual Run' : `👤 ${entry.performed_by}`)}
                         </div>` : ''}
@@ -5064,7 +5092,11 @@
                     <div class="log-time">${formatTimestamp(entry.timestamp)}</div>
                     <div class="log-status">
                         <span class="status-icon ${entry.status}">
-                            ${entry.status === 'success' ? '✓' : (entry.status === 'deleted' ? '🗑' : (entry.status === 'updated' ? '🔄' : (entry.status === 'renamed' ? '✏️' : '✗')))}
+                            ${entry.status === 'success' ? '✓' : 
+                              (entry.status === 'deleted' ? '🗑' : 
+                              (entry.status === 'updated' ? '🔄' : 
+                              (entry.status === 'renamed' ? '✏️' : 
+                              (entry.status === 'settings_updated' ? '⚙️' : '✗'))))}
                         </span>
                         ${entry.status === 'success' && entry.dashboard_url ? 
                             `<a href="${entry.dashboard_url}" target="_blank" class="log-link">Open →</a>` : 
@@ -5072,8 +5104,10 @@
                             `<a href="${entry.dashboard_url}" target="_blank" class="log-link">Open →</a>` :
                             (entry.status === 'renamed' && entry.dashboard_url ? 
                             `<a href="${entry.dashboard_url}" target="_blank" class="log-link">Open →</a>` : 
+                            (entry.status === 'settings_updated' ? 
+                            `<span style="color: var(--accent-blue); font-size: 0.8rem;">Updated</span>` :
                             (entry.status === 'deleted' ? '<span style="color: #fbbf24; font-size: 0.8rem;">Deleted</span>' :
-                            (entry.error_message ? `<span style="color: var(--accent-red); font-size: 0.8rem;">${entry.error_message}</span>` : ''))))
+                            (entry.error_message ? `<span style="color: var(--accent-red); font-size: 0.8rem;">${entry.error_message}</span>` : '')))))
                         }
                     </div>
                 </div>

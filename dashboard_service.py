@@ -2447,6 +2447,7 @@ def get_settings():
 
 
 @app.route('/api/settings', methods=['POST'])
+@require_auth
 def save_settings():
     """Save all settings to MongoDB"""
     try:
@@ -2457,12 +2458,26 @@ def save_settings():
         data = request.json
         logging.info(f"Saving settings: {data}")
         
+        # Get user info for logging
+        user = get_current_user()
+        user_email = user.get('email', 'Unknown User') if user else 'Unknown User'
+        
+        changes_made = []
+        
         # Save metabase config to MongoDB
         if 'metabase' in data:
             metabase_data = data['metabase']
             
             # Load existing config to preserve password if not changed
             existing_config = mongo_storage.get_metabase_config()
+            
+            # Track what changed
+            if metabase_data.get('base_url') != existing_config.get('base_url'):
+                changes_made.append(f"Metabase URL: {existing_config.get('base_url', 'N/A')} → {metabase_data.get('base_url')}")
+            if metabase_data.get('username') != existing_config.get('username'):
+                changes_made.append(f"Metabase Username: {existing_config.get('username', 'N/A')} → {metabase_data.get('username')}")
+            if metabase_data.get('password') and metabase_data.get('password') != '********':
+                changes_made.append("Metabase Password: Updated")
             
             new_config = {
                 "base_url": metabase_data.get('base_url', existing_config.get('base_url', '')),
@@ -2478,6 +2493,16 @@ def save_settings():
         existing_auto_config = mongo_storage.get_auto_clone_config()
         
         if 'source_dashboards' in data:
+            # Track source dashboard changes
+            old_sources = existing_auto_config.get('source_dashboards', {})
+            new_sources = data['source_dashboards']
+            
+            for dash_type in ['content', 'message', 'email']:
+                old_val = old_sources.get(dash_type)
+                new_val = new_sources.get(dash_type)
+                if old_val != new_val:
+                    changes_made.append(f"Source Dashboard ({dash_type.title()}): {old_val or 'None'} → {new_val or 'None'}")
+            
             existing_auto_config['source_dashboards'] = {
                 "content": data['source_dashboards'].get('content'),
                 "message": data['source_dashboards'].get('message'),
@@ -2485,6 +2510,16 @@ def save_settings():
             }
         
         if 'dashboards_collections' in data:
+            # Track collection changes
+            old_collections = existing_auto_config.get('dashboards_collections', {})
+            new_collections = data['dashboards_collections']
+            
+            for dash_type in ['content', 'message', 'email']:
+                old_val = old_collections.get(dash_type)
+                new_val = new_collections.get(dash_type)
+                if old_val != new_val:
+                    changes_made.append(f"Dashboards Collection ({dash_type.title()}): {old_val or 'None'} → {new_val or 'None'}")
+            
             existing_auto_config['dashboards_collections'] = {
                 "content": data['dashboards_collections'].get('content'),
                 "message": data['dashboards_collections'].get('message'),
@@ -2494,6 +2529,21 @@ def save_settings():
         if not mongo_storage.set_auto_clone_config(existing_auto_config):
             return jsonify({"error": "Failed to save auto clone config to MongoDB"}), 500
         logging.info(f"Saved auto clone config: {existing_auto_config}")
+        
+        # Log activity if any changes were made
+        if changes_made:
+            activity_entry = ActivityLogEntry(
+                timestamp=datetime.now().isoformat() + 'Z',
+                status='settings_updated',
+                db_type='system',
+                dashboard_name='Settings Configuration',
+                dashboard_id=None,
+                dashboard_url=None,
+                performed_by=user_email,
+                details='; '.join(changes_made)
+            )
+            mongo_storage.add_activity_log(asdict(activity_entry))
+            logging.info(f"Settings updated by {user_email}: {'; '.join(changes_made)}")
         
         # Reload configs in service
         service.reload_configs()
