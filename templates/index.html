@@ -2483,14 +2483,14 @@
             <div class="log-filters">
                 <!-- Row 1: Time filters + Date picker -->
                 <div class="filter-row">
-                    <div class="filter-buttons">
+                <div class="filter-buttons">
                         <button class="filter-btn active" data-filter="time" data-value="all" onclick="setTimeFilter('all')">All</button>
                         <button class="filter-btn" data-filter="time" data-value="1hour" onclick="setTimeFilter('1hour')">1h</button>
                         <button class="filter-btn" data-filter="time" data-value="today" onclick="setTimeFilter('today')">Today</button>
                         <button class="filter-btn" data-filter="time" data-value="7days" onclick="setTimeFilter('7days')">7d</button>
                         <button class="filter-btn" data-filter="time" data-value="month" onclick="setTimeFilter('month')">Month</button>
                         <button class="filter-btn" data-filter="time" data-value="year" onclick="setTimeFilter('year')">Year</button>
-                    </div>
+                </div>
                     <span class="filter-divider">|</span>
                     <div class="filter-buttons">
                         <button class="filter-btn active" data-filter="type" data-value="all" onclick="toggleTypeFilter('all')">All</button>
@@ -2506,8 +2506,8 @@
                         <button class="filter-btn status-deleted" data-filter="status" data-value="deleted" onclick="toggleStatusFilter('deleted')">Deleted</button>
                     </div>
                     <span class="filter-divider">|</span>
-                    <div class="date-picker-container">
-                        <input type="date" id="date-picker" onchange="filterByDate(this.value)">
+                <div class="date-picker-container">
+                    <input type="date" id="date-picker" onchange="filterByDate(this.value)">
                         <button class="filter-btn clear-btn" onclick="clearAllFilters()">Reset</button>
                     </div>
                 </div>
@@ -2722,7 +2722,7 @@
 
         // Filter entries by all criteria
         function filterEntries(entries) {
-            return entries.filter(entry => {
+                return entries.filter(entry => {
                 // Time filter
                 if (!passesTimeFilter(entry)) return false;
                 
@@ -2739,8 +2739,8 @@
         // Check if entry passes time filter
         function passesTimeFilter(entry) {
             if (selectedDate) {
-                const entryDate = new Date(entry.timestamp).toISOString().split('T')[0];
-                return entryDate === selectedDate;
+                    const entryDate = new Date(entry.timestamp).toISOString().split('T')[0];
+                    return entryDate === selectedDate;
             }
             
             const now = new Date();
@@ -2752,17 +2752,17 @@
                     const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
                     return entryDate >= oneHourAgo;
                 case 'today':
-                    return entryDate >= today;
+                        return entryDate >= today;
                 case '7days':
                     const sevenDaysAgo = new Date(today);
                     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-                    return entryDate >= sevenDaysAgo;
+                        return entryDate >= sevenDaysAgo;
                 case 'month':
                     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-                    return entryDate >= startOfMonth;
+                        return entryDate >= startOfMonth;
                 case 'year':
                     const startOfYear = new Date(now.getFullYear(), 0, 1);
-                    return entryDate >= startOfYear;
+                        return entryDate >= startOfYear;
                 default:
                     return true;
             }
@@ -3141,6 +3141,16 @@
                     </div>
                 </div>
             `}).join('');
+            
+            // Check for active updates and resume progress tracking
+            dashboards.forEach(d => {
+                if (d.active_update) {
+                    // Resume tracking this update
+                    setTimeout(() => {
+                        startTrackingUpdate(d.id, d.active_update.task_id, d.type, d.name || 'Unnamed');
+                    }, 100); // Small delay to ensure DOM is ready
+                }
+            });
         }
 
         // Filter dashboard cards by search
@@ -3364,18 +3374,15 @@
             }
         }
         
-        // Proceed with the actual update after confirmation
-        async function proceedWithUpdate(dashboardId, dashboardType, dashboardName) {
+        // Helper function to start tracking update progress (for both new updates and resumed ones)
+        async function startTrackingUpdate(dashboardId, taskId, dashboardType, dashboardName) {
             const container = document.querySelector(`.dashboard-card-container[data-dashboard-id="${dashboardId}"]`);
-            if (!container) {
-                showToast('Dashboard card not found', 'error');
-                return;
-            }
+            if (!container) return;
             
-            // Switch from confirmation view to progress view
+            // Make sure card is flipped and showing progress view
+            container.classList.add('flipped');
             const confirmView = document.getElementById(`confirm-view-${dashboardId}`);
             const progressView = document.getElementById(`progress-view-${dashboardId}`);
-            
             if (confirmView) confirmView.classList.remove('active');
             if (progressView) progressView.classList.add('active');
             
@@ -3406,6 +3413,40 @@
                 }
             };
             
+            // Store task ID for cancel functionality
+            activeUpdateTasks.set(dashboardId, taskId);
+            
+            // Start polling for progress
+            await pollUpdateProgress(taskId, dashboardId, dashboardType, updateProgress, hideCancelBtn);
+            
+            // Clean up
+            activeUpdateTasks.delete(dashboardId);
+        }
+        
+        // Proceed with the actual update after confirmation
+        async function proceedWithUpdate(dashboardId, dashboardType, dashboardName) {
+            const container = document.querySelector(`.dashboard-card-container[data-dashboard-id="${dashboardId}"]`);
+            if (!container) {
+                showToast('Dashboard card not found', 'error');
+                return;
+            }
+            
+            // Switch from confirmation view to progress view
+            const confirmView = document.getElementById(`confirm-view-${dashboardId}`);
+            const progressView = document.getElementById(`progress-view-${dashboardId}`);
+            
+            if (confirmView) confirmView.classList.remove('active');
+            if (progressView) progressView.classList.add('active');
+            
+            const progressFill = document.getElementById(`progress-fill-${dashboardId}`);
+            const progressStatus = document.getElementById(`progress-status-${dashboardId}`);
+            
+            // Helper to update progress
+            const updateProgress = (percent, status) => {
+                if (progressFill) progressFill.style.width = `${percent}%`;
+                if (progressStatus) progressStatus.textContent = status;
+            };
+            
             try {
                 updateProgress(10, 'Connecting to server...');
                 
@@ -3432,15 +3473,11 @@
                 const data = await response.json();
                 
                 if (data.task_id) {
-                    // Store task ID for cancel functionality
-                    activeUpdateTasks.set(dashboardId, data.task_id);
-                    
-                    // Poll for progress
-                    await pollUpdateProgress(data.task_id, dashboardId, dashboardType, updateProgress, hideCancelBtn);
+                    // Use the helper function to track progress
+                    await startTrackingUpdate(dashboardId, data.task_id, dashboardType, dashboardName);
                 } else if (data.success) {
                     // Immediate success (no polling needed)
-                    hideCancelBtn();
-                    updateProgress(100, 'Update complete!', false, true);
+                    updateProgress(100, 'Update complete!');
                     
                     // Update the card with new URL
                     setTimeout(() => {
@@ -3457,8 +3494,11 @@
                 
             } catch (error) {
                 console.error('Dashboard update error:', error);
-                hideCancelBtn();
-                updateProgress(0, `Error: ${error.message}`, true);
+                const progressStatus = document.getElementById(`progress-status-${dashboardId}`);
+                if (progressStatus) {
+                    progressStatus.textContent = `Error: ${error.message}`;
+                    progressStatus.className = 'update-progress-status error';
+                }
                 
                 // Flip back after showing error
                 setTimeout(() => {
@@ -3466,9 +3506,6 @@
                 }, 3000);
                 
                 showToast(`Failed to update dashboard: ${error.message}`, 'error');
-            } finally {
-                // Clean up task tracking
-                activeUpdateTasks.delete(dashboardId);
             }
         }
         
@@ -5034,7 +5071,7 @@
                             (entry.status === 'updated' && entry.dashboard_url ? 
                             `<a href="${entry.dashboard_url}" target="_blank" class="log-link">Open →</a>` :
                             (entry.status === 'renamed' && entry.dashboard_url ? 
-                            `<a href="${entry.dashboard_url}" target="_blank" class="log-link">Open →</a>` :
+                            `<a href="${entry.dashboard_url}" target="_blank" class="log-link">Open →</a>` : 
                             (entry.status === 'deleted' ? '<span style="color: #fbbf24; font-size: 0.8rem;">Deleted</span>' :
                             (entry.error_message ? `<span style="color: var(--accent-red); font-size: 0.8rem;">${entry.error_message}</span>` : ''))))
                         }
@@ -5126,7 +5163,7 @@
                 console.error('Failed to fetch dashboard counts:', error);
             }
         }
-        
+
         // Fetch logs
         let totalLogCount = 0;  // Track total count from server
         
@@ -5414,13 +5451,13 @@
             // Only start data refresh if authenticated (or auth not configured)
             const mainContent = document.getElementById('main-content');
             if (!mainContent.classList.contains('hidden')) {
-                refreshData();
-                
-                // Update countdown every second
-                countdownInterval = setInterval(updateCountdown, 1000);
-                
-                // Refresh data every 5 seconds
-                setInterval(refreshData, 5000);
+            refreshData();
+            
+            // Update countdown every second
+            countdownInterval = setInterval(updateCountdown, 1000);
+            
+            // Refresh data every 5 seconds
+            setInterval(refreshData, 5000);
             }
         });
     </script>

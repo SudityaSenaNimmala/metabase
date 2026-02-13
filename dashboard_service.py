@@ -69,19 +69,19 @@ class MongoDBStorage:
         
         mongodb_uri = os.environ.get('MONGODB_URI', DEFAULT_MONGODB_URI)
         
-        try:
-            from pymongo import MongoClient
+            try:
+                from pymongo import MongoClient
             logging.info(f"Connecting to MongoDB...")
-            self.mongo_client = MongoClient(mongodb_uri, serverSelectionTimeoutMS=5000)
-            # Test connection
-            self.mongo_client.admin.command('ping')
+                self.mongo_client = MongoClient(mongodb_uri, serverSelectionTimeoutMS=5000)
+                # Test connection
+                self.mongo_client.admin.command('ping')
             self.db = self.mongo_client['metabase_dashboard_service']
             self.connected = True
             logging.info("Connected to MongoDB successfully")
             
             # Create indexes for better performance
             self._create_indexes()
-        except Exception as e:
+            except Exception as e:
             logging.error(f"Failed to connect to MongoDB: {e}")
             self.connected = False
     
@@ -112,7 +112,7 @@ class MongoDBStorage:
             self.db['merged_dashboards'].create_index([('created_at', -1)])
             
             logging.info("MongoDB indexes created")
-        except Exception as e:
+            except Exception as e:
             logging.warning(f"Could not create indexes: {e}")
     
     def is_connected(self) -> bool:
@@ -176,7 +176,7 @@ class MongoDBStorage:
             )
             logging.info(f"MongoDB set_config '{key}': matched={result.matched_count}, modified={result.modified_count}, upserted={result.upserted_id}")
             return True
-        except Exception as e:
+            except Exception as e:
             logging.error(f"Failed to set config '{key}': {e}")
             import traceback
             traceback.print_exc()
@@ -233,10 +233,10 @@ class MongoDBStorage:
         try:
             # Fetch entries
             cursor = self.db['activity_log'].find().limit(limit * 2)
-            entries = []
-            for doc in cursor:
-                doc.pop('_id', None)
-                entries.append(doc)
+                entries = []
+                for doc in cursor:
+                    doc.pop('_id', None)
+                    entries.append(doc)
             
             # Sort by timestamp properly (normalize Z suffix for consistent sorting)
             def normalize_timestamp(ts):
@@ -246,7 +246,7 @@ class MongoDBStorage:
             entries.sort(key=lambda x: normalize_timestamp(x.get('timestamp', '')), reverse=True)
             
             return entries[:limit]
-        except Exception as e:
+            except Exception as e:
             logging.error(f"Failed to get activity logs: {e}")
             return []
     
@@ -270,36 +270,36 @@ class MongoDBStorage:
             return {"total": 0, "success": 0, "failed": 0, "deleted": 0, "by_type": {"content": 0, "message": 0, "email": 0}}
         
         try:
-            pipeline = [
-                {
-                    '$group': {
-                        '_id': None,
-                        'total': {'$sum': 1},
-                        'success': {'$sum': {'$cond': [{'$eq': ['$status', 'success']}, 1, 0]}},
-                        'deleted': {'$sum': {'$cond': [{'$eq': ['$status', 'deleted']}, 1, 0]}},
-                        'failed': {'$sum': {'$cond': [{'$eq': ['$status', 'failed']}, 1, 0]}},
-                        'content': {'$sum': {'$cond': [{'$and': [{'$eq': ['$status', 'success']}, {'$eq': ['$db_type', 'content']}]}, 1, 0]}},
-                        'message': {'$sum': {'$cond': [{'$and': [{'$eq': ['$status', 'success']}, {'$eq': ['$db_type', 'message']}]}, 1, 0]}},
-                        'email': {'$sum': {'$cond': [{'$and': [{'$eq': ['$status', 'success']}, {'$eq': ['$db_type', 'email']}]}, 1, 0]}}
+                pipeline = [
+                    {
+                        '$group': {
+                            '_id': None,
+                            'total': {'$sum': 1},
+                            'success': {'$sum': {'$cond': [{'$eq': ['$status', 'success']}, 1, 0]}},
+                            'deleted': {'$sum': {'$cond': [{'$eq': ['$status', 'deleted']}, 1, 0]}},
+                            'failed': {'$sum': {'$cond': [{'$eq': ['$status', 'failed']}, 1, 0]}},
+                            'content': {'$sum': {'$cond': [{'$and': [{'$eq': ['$status', 'success']}, {'$eq': ['$db_type', 'content']}]}, 1, 0]}},
+                            'message': {'$sum': {'$cond': [{'$and': [{'$eq': ['$status', 'success']}, {'$eq': ['$db_type', 'message']}]}, 1, 0]}},
+                            'email': {'$sum': {'$cond': [{'$and': [{'$eq': ['$status', 'success']}, {'$eq': ['$db_type', 'email']}]}, 1, 0]}}
+                        }
                     }
-                }
-            ]
+                ]
             result = list(self.db['activity_log'].aggregate(pipeline))
-            if result:
-                r = result[0]
-                return {
-                    "total": r.get('total', 0),
-                    "success": r.get('success', 0),
-                    "failed": r.get('failed', 0),
-                    "deleted": r.get('deleted', 0),
-                    "by_type": {
-                        "content": r.get('content', 0),
-                        "message": r.get('message', 0),
-                        "email": r.get('email', 0)
+                if result:
+                    r = result[0]
+                    return {
+                        "total": r.get('total', 0),
+                        "success": r.get('success', 0),
+                        "failed": r.get('failed', 0),
+                        "deleted": r.get('deleted', 0),
+                        "by_type": {
+                            "content": r.get('content', 0),
+                            "message": r.get('message', 0),
+                            "email": r.get('email', 0)
+                        }
                     }
-                }
             return {"total": 0, "success": 0, "failed": 0, "deleted": 0, "by_type": {"content": 0, "message": 0, "email": 0}}
-        except Exception as e:
+            except Exception as e:
             logging.error(f"Failed to get activity stats: {e}")
             return {"total": 0, "success": 0, "failed": 0, "deleted": 0, "by_type": {"content": 0, "message": 0, "email": 0}}
     
@@ -623,7 +623,7 @@ class DashboardService:
         self.metabase_config = self.storage.get_metabase_config()
         
         if self.metabase_config.get('base_url'):
-            self.base_url = self.metabase_config['base_url'].rstrip('/')
+                self.base_url = self.metabase_config['base_url'].rstrip('/')
             logging.info("Loaded Metabase config from MongoDB")
         else:
             # Fall back to environment variables if MongoDB config is empty
@@ -1447,12 +1447,27 @@ def get_dashboards_list(db_type):
         
         for item in data:
             if item.get('model') == 'dashboard':
-                dashboards.append({
-                    'id': item.get('id'),
+                dash_id = item.get('id')
+                dash_info = {
+                    'id': dash_id,
                     'name': item.get('name'),
                     'description': item.get('description', ''),
-                    'url': f"{base_url}/dashboard/{item.get('id')}"
-                })
+                    'url': f"{base_url}/dashboard/{dash_id}"
+                }
+                
+                # Check if this dashboard has an active update task
+                task_id = dashboard_to_task.get(dash_id)
+                if task_id and task_id in update_tasks:
+                    task = update_tasks[task_id]
+                    if not task.get('completed', False):
+                        dash_info['active_update'] = {
+                            'task_id': task_id,
+                            'progress': task.get('progress', 0),
+                            'status': task.get('status', ''),
+                            'cancel_requested': task.get('cancel_requested', False)
+                        }
+                
+                dashboards.append(dash_info)
         
         # Sort by name
         dashboards.sort(key=lambda x: x.get('name', '').lower())
@@ -1472,6 +1487,8 @@ def get_dashboards_list(db_type):
 
 # Store for update task progress
 update_tasks = {}
+# Map dashboard_id to active task_id for tracking updates across page reloads
+dashboard_to_task = {}
 
 @app.route('/api/dashboard/update', methods=['POST'])
 @require_auth
@@ -1514,6 +1531,10 @@ def update_dashboard():
         
         # Create task ID for progress tracking
         task_id = str(uuid.uuid4())
+        
+        # Map dashboard to task so we can track it across page reloads
+        dashboard_to_task[dashboard_id] = task_id
+        
         update_tasks[task_id] = {
             'progress': 0,
             'status': 'Starting update...',
@@ -1621,6 +1642,10 @@ def _execute_dashboard_update(task_id, dashboard_id, dashboard_type, dashboard_n
             task['success'] = False
             task['status'] = 'Update cancelled'
             task['error'] = 'Cancelled by user'
+            # Clean up mapping
+            old_dash_id = task.get('old_dashboard_id')
+            if old_dash_id and dashboard_to_task.get(old_dash_id) == task_id:
+                del dashboard_to_task[old_dash_id]
             logging.info(f"Update task {task_id} cancelled by user")
             return True
         return False
@@ -1952,6 +1977,9 @@ def _execute_dashboard_update(task_id, dashboard_id, dashboard_type, dashboard_n
         task['new_dashboard_id'] = new_dashboard_id
         task['new_url'] = new_url
         
+        # Clean up mapping when complete (keep it for a bit so user can see final status)
+        # We'll clean it up after they fetch the status
+        
         logging.info(f"Dashboard update complete: {dashboard_name} -> ID {new_dashboard_id}")
         
     except Exception as e:
@@ -1975,6 +2003,11 @@ def _execute_dashboard_update(task_id, dashboard_id, dashboard_type, dashboard_n
         task['success'] = False
         task['error'] = str(e)
         task['status'] = f'Error: {str(e)}'
+        
+        # Clean up mapping on error
+        old_dash_id = task.get('old_dashboard_id')
+        if old_dash_id and dashboard_to_task.get(old_dash_id) == task_id:
+            del dashboard_to_task[old_dash_id]
 
 
 @app.route('/api/dashboard/update/status/<task_id>')
@@ -1985,7 +2018,7 @@ def get_update_status(task_id):
     if not task:
         return jsonify({"error": "Task not found"}), 404
     
-    return jsonify({
+    response = {
         "progress": task['progress'],
         "status": task['status'],
         "completed": task['completed'],
@@ -1995,7 +2028,15 @@ def get_update_status(task_id):
         "new_dashboard_id": task.get('new_dashboard_id'),
         "new_url": task.get('new_url'),
         "old_dashboard_id": task.get('old_dashboard_id')
-    })
+    }
+    
+    # Clean up mapping after successful completion (user has fetched final status)
+    if task['completed'] and task['success']:
+        old_dash_id = task.get('old_dashboard_id')
+        if old_dash_id and dashboard_to_task.get(old_dash_id) == task_id:
+            del dashboard_to_task[old_dash_id]
+    
+    return jsonify(response)
 
 
 @app.route('/api/dashboard/delete/<int:dashboard_id>', methods=['POST'])
@@ -2338,7 +2379,7 @@ def refresh_cache():
         mongo_storage.save_db_identification_results({
             'content': [], 'message': [], 'email': [], 'unknown': []
         })
-        return jsonify({"message": "Cache cleared. Next run will rescan databases."})
+            return jsonify({"message": "Cache cleared. Next run will rescan databases."})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -2478,7 +2519,7 @@ def test_connection():
         # If password is masked, use existing password from MongoDB
         if password == '********':
             existing = mongo_storage.get_metabase_config()
-            password = existing.get('password', '')
+                    password = existing.get('password', '')
         
         if not base_url or not username or not password:
             return jsonify({"success": False, "error": "Missing credentials"}), 400
