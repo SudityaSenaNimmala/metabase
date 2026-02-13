@@ -560,9 +560,10 @@ class ActivityLogEntry:
     dashboard_name: str
     dashboard_id: int
     dashboard_url: str
-    status: str  # "success", "failed", "deleted", or "updated"
+    status: str  # "success", "failed", "deleted", "updated", "renamed", or "settings_updated"
     error_message: Optional[str] = None
     performed_by: Optional[str] = "auto-clone"  # "auto-clone", "manual-run", or user email
+    details: Optional[str] = None  # Additional details about the action
 
 
 class ActivityLog:
