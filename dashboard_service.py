@@ -620,7 +620,7 @@ class DashboardService:
         self.metabase_config = self.storage.get_metabase_config()
         
         if self.metabase_config.get('base_url'):
-                self.base_url = self.metabase_config['base_url'].rstrip('/')
+            self.base_url = self.metabase_config['base_url'].rstrip('/')
             logging.info("Loaded Metabase config from MongoDB")
         else:
             # Fall back to environment variables if MongoDB config is empty
@@ -2376,7 +2376,7 @@ def refresh_cache():
         mongo_storage.save_db_identification_results({
             'content': [], 'message': [], 'email': [], 'unknown': []
         })
-            return jsonify({"message": "Cache cleared. Next run will rescan databases."})
+        return jsonify({"message": "Cache cleared. Next run will rescan databases."})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -2516,7 +2516,7 @@ def test_connection():
         # If password is masked, use existing password from MongoDB
         if password == '********':
             existing = mongo_storage.get_metabase_config()
-                    password = existing.get('password', '')
+            password = existing.get('password', '')
         
         if not base_url or not username or not password:
             return jsonify({"success": False, "error": "Missing credentials"}), 400
