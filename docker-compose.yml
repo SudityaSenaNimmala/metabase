@@ -1,0 +1,27 @@
+version: '3.8'
+
+services:
+  metabase-dashboard-service:
+    build: .
+    container_name: metabase-dashboard-service
+    ports:
+      - "1206:1206"
+    environment:
+      - MONGODB_URI=${MONGODB_URI}
+      - MICROSOFT_CLIENT_ID=${MICROSOFT_CLIENT_ID}
+      - MICROSOFT_CLIENT_SECRET=${MICROSOFT_CLIENT_SECRET}
+      - MICROSOFT_TENANT_ID=${MICROSOFT_TENANT_ID}
+      - ALLOWED_EMAIL_DOMAIN=${ALLOWED_EMAIL_DOMAIN}
+      - SESSION_SECRET_KEY=${SESSION_SECRET_KEY}
+      - METABASE_URL=${METABASE_URL:-}
+      - METABASE_USERNAME=${METABASE_USERNAME:-}
+      - METABASE_PASSWORD=${METABASE_PASSWORD:-}
+    volumes:
+      - ./logs:/app/logs
+    restart: unless-stopped
+    networks:
+      - metabase-network
+
+networks:
+  metabase-network:
+    driver: bridge
