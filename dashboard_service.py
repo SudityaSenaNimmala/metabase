@@ -1146,7 +1146,12 @@ def get_msal_app():
 
 def get_current_user():
     """Get current user from session cookie"""
-    from flask import request
+    from flask import request, has_request_context
+    
+    # Check if we're in a request context (not in background job)
+    if not has_request_context():
+        return None
+    
     session_id = request.cookies.get('session_id')
     if not session_id:
         return None
